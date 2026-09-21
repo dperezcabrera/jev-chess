@@ -55,6 +55,7 @@ body {
 .topbar-nav { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); max-width: 1200px; margin: 0 auto; padding: 0 var(--space-4); }
 .topbar-nav ul { display: flex; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
 .brand { font-size: 1.25rem; letter-spacing: -0.01em; }
+.brand a { color: var(--accent); text-underline-offset: 4px; }
 .topbar-link { display: inline-flex; align-items: center; gap: var(--space-2); justify-content: center; min-width: 44px; min-height: 44px; padding: 0 var(--space-2); border-radius: var(--radius); color: var(--text); font-weight: 600; text-decoration: none; }
 .topbar-link:hover { background: color-mix(in srgb, var(--border) 50%, transparent); }
 
@@ -242,6 +243,7 @@ a.button { text-decoration: none; }
 .versus h4 { margin: var(--space-4) 0 var(--space-2); font-size: 0.875rem; color: var(--text-muted); }
 .versus-table { margin-top: var(--space-3); }
 .group-table th, .group-table td, .decile-table th, .decile-table td { height: 32px; }
+.detail-row td { color: var(--text-muted); background: color-mix(in srgb, var(--border) 25%, transparent); }
 .versus h4 + .analysis-note { margin: 0 0 var(--space-2); }
 .analysis-actions { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-3); max-width: 100%; }
 .field { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }

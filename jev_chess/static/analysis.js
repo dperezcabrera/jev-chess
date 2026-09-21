@@ -9,7 +9,11 @@ export const DEPTHS = {
 const percentileRange = (share) => ({ key: `p${share}`, label: `Top ${share}%`, holds: (move) => move.percentile >= 100 - share });
 const withinLoss = (limit) => ({ key: `cp${limit}`, label: `Within ${limit} cp of the best`, holds: (move) => move.loss <= limit });
 const GROUPS = {
-  percentileRanges: [{ key: 'best', label: 'Top move', holds: (move) => move.better === 0 }, ...[2, 5, 10, 20, 30, 50].map(percentileRange)],
+  percentileRanges: [
+    { key: 'best', label: 'Top move', holds: (move) => move.better === 0 },
+    { key: 'top3', label: 'Top 3 moves', holds: (move) => move.better < 3 },
+    ...[2, 5, 10, 20, 30, 50].map(percentileRange),
+  ],
   distanceBands: [...[10, 25, 50, 100, 200].map(withinLoss), { key: 'far', label: 'More than 200 cp behind', holds: (move) => move.loss > 200 }],
 };
 const ALL_GROUPS = [...GROUPS.percentileRanges, ...GROUPS.distanceBands];
@@ -101,7 +105,13 @@ export function summarizeRanks(ranks) {
     randomLoss: mean((rank) => rank.randomLoss),
     deciles: Array.from({ length: 10 }, (_, index) => {
       const picks = ranks.filter((rank) => rank.decile === index).length;
-      return { decile: index + 1, averageLoss: pooled((rank) => rank.deciles[index]), picks, share: ranks.length ? (100 * picks) / ranks.length : 0 };
+      return {
+        decile: index + 1,
+        averageLoss: pooled((rank) => rank.deciles[index]),
+        picks,
+        share: ranks.length ? (100 * picks) / ranks.length : 0,
+        randomShare: 100 * mean((rank) => rank.deciles[index].moves / rank.options),
+      };
     }),
     ...Object.fromEntries(Object.entries(GROUPS).map(([name, groups]) => [name, groups.map((group) => {
       const picks = ranks.filter((rank) => rank.groups[group.key].picked).length;

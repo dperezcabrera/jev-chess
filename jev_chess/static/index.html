@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>How good is Jev at chess? Try to beat it</title>
+<title>How good is Jev AI at chess? Try to beat it</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 2 2'%3E%3Crect width='2' height='2' fill='%23b58863'/%3E%3Crect width='1' height='1' fill='%23f0d9b5'/%3E%3Crect x='1' y='1' width='1' height='1' fill='%23f0d9b5'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="static/vendor/chessground/chessground.base.css">
 <link rel="stylesheet" href="static/vendor/chessground/chessground.brown.css">
@@ -13,7 +13,7 @@
 <body>
 <header class="topbar">
   <nav class="topbar-nav" aria-label="Main">
-    <h1 class="brand">How good is Jev at chess?</h1>
+    <h1 class="brand">How good is <a href="https://typesafe.ai" target="_blank" rel="noopener">Jev AI</a> at chess?</h1>
     <ul>
       <li>
         <a class="topbar-link" href="https://github.com/dperezcabrera/jev-chess" target="_blank" rel="noopener" aria-label="Source on GitHub" title="Source on GitHub">
@@ -188,7 +188,9 @@
                 <th class="col-text" scope="col">Decile of legal moves</th>
                 <th class="col-num" scope="col">Avg. centipawns behind best</th>
                 <th class="col-num" scope="col" id="decile-white">White</th>
+                <th class="col-num" scope="col">Random</th>
                 <th class="col-num" scope="col" id="decile-black">Black</th>
+                <th class="col-num" scope="col">Random</th>
               </tr>
             </thead>
             <tbody id="decile-rows"></tbody>

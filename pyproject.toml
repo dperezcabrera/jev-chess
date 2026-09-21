@@ -1,7 +1,7 @@
 [project]
 name = "jev-chess"
 version = "0.1.0"
-description = "How good is Jev at chess? Play TypeSafe AI's System One model through OpenRouter and measure it with Stockfish"
+description = "How good is Jev AI at chess? Play TypeSafe AI's System One model through OpenRouter and measure it with Stockfish"
 readme = "README.md"
 license = "GPL-3.0-or-later"
 requires-python = ">=3.11"

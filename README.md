@@ -1,4 +1,4 @@
-# How good is Jev at chess? Try to beat it
+# How good is [Jev AI](https://typesafe.ai) at chess? Try to beat it
 
 `jev-chess`: play chess in your browser against [Jev](https://typesafe.ai), TypeSafe AI's System One model, called through [OpenRouter](https://openrouter.ai/typesafe).
 
@@ -6,21 +6,21 @@ Jev does not generate text. It answers typed questions about a state with calibr
 
 ![Choosing a side](screenshots/choose-side.png)
 
-![Jev playing both sides: Black mates in seven moves](screenshots/game.png)
+![Jev playing both sides](screenshots/game.png)
 
 ## What you get
 
-- **A real board.** [chessground](https://github.com/lichess-org/chessground), the open source board from lichess: drag or click, legal moves only, lichess-style promotion picker on the board.
+- **A real board.** [chessground](https://github.com/lichess-org/chessground), the open source board from lichess: drag or click, legal moves only.
 - **Jev's confidence, every move.** The side panel shows the three options Jev weighed and the probability it gave each one.
-- **Cost and latency, live.** The footer adds up Jev calls, tokens, average latency and dollars for the current game, straight from OpenRouter's usage data. Jev playing both sides costs about $0.00005 per move at 300 to 400 ms each: a 14-move game for $0.00065, a 30-move one for $0.0014.
+- **Cost and latency, live.** The footer adds up Jev calls, tokens, average latency and dollars for the current game, straight from OpenRouter's usage data. Jev playing both sides costs about $0.00005 per move at 300 to 400 ms each: a 20-move game for $0.0009.
 - **Engine analysis in your browser.** Stockfish 19 (WebAssembly, 1.8 MB) evaluates the game locally: evaluation chart, average centipawn loss, inaccuracies, mistakes and blunders per player. No server cost, no extra API calls. Depth is configurable.
-- **Is Jev better than chance?** For every position, Stockfish scores all legal moves and ranks the one that was played. A random mover sits on the 50th percentile by definition, so anything above that is signal. Two breakdowns sit next to what a random mover would score. By distance: the share of moves within 10, 25, 50, 100 and 200 centipawns of the best one, the absolute reference. By percentile range: top move, top 2%, 5%, 10%, 20%, 30% and 50%, each with its average and its worst loss, because a top range can still hold a terrible move when a position has only one good one.
+- **Is Jev better than chance?** For every position, Stockfish scores all legal moves and ranks the one that was played. A random mover sits on the 50th percentile by definition, so anything above that is signal. Two breakdowns sit next to what a random mover would score. By distance: the share of moves within 10, 25, 50, 100 and 200 centipawns of the best one, the absolute reference. By percentile range: top move, top 3 moves, top 2%, 5%, 10%, 20%, 30% and 50%, each with its average and its worst loss, because a top range can still hold a terrible move when a position has only one good one.
 - **PGN export**: a dialog shows the game in Portable Game Notation, with a button to download it as a file.
 - **One game per browser session**, so several people can play on the same server.
 
 ![Analysis of a Jev-versus-Jev game](screenshots/analysis.png)
 
-In the game above Jev plays both sides and Black mates in seven moves. As Black it lands on the 90th percentile and loses 23 centipawns per move where a random mover would lose 327; as White, the 58th percentile and 184 against 179, because it hangs its queen on move 4. Black kept 86% of its moves within 50 centipawns of the best one (random: 21%); White 43% (random: 26%). Both found the engine's top move 43% of the time (random: 4% and 9%). Better than chance, and still not a chess player. The top 10% range in that game holds a move 785 centipawns behind the best, which is why every range shows its worst loss. Jev is not fully deterministic, so your numbers will differ.
+In the game above Jev plays both sides and draws by repetition after 10 moves each. As Black it lands on the 80th percentile and loses 114 centipawns per move where a random mover would lose 402; as White, the 63rd percentile and 122 against 128. Black kept 70% of its moves within 50 centipawns of the best one (random: 20%); White 50% (random: 37%). They found the engine's top move 20% and 40% of the time (random: 4% and 15%). Better than chance, and still not a chess player. The top 3 moves in that game include one 1306 centipawns behind the best, which is why every range shows its worst loss. Jev is not fully deterministic, so your numbers will differ.
 
 > Jev is a fast classifier, not a chess engine. Expect plausible moves, not strong ones. This project is a demo of the System One decision pattern.
 

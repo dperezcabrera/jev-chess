@@ -37,7 +37,8 @@ test('percentile ranges widen from the top move down to the top half', () => {
   const forty = new Map(Array.from({ length: 40 }, (_, i) => [`m${i}`, -i * 5]));
   const second = rankAgainstRandom(forty, 'm1');
   const picked = (key) => second.groups[key].picked;
-  assert.deepEqual(['best', 'p2', 'p5', 'p10', 'p50'].map(picked), [false, false, true, true, true]);
+  assert.deepEqual(['best', 'top3', 'p2', 'p5', 'p10', 'p50'].map(picked), [false, true, false, true, true, true]);
+  assert.equal(second.groups.top3.moves, 3);
   assert.deepEqual(['best', 'p2', 'p5', 'p10', 'p20', 'p50'].map((key) => second.groups[key].moves), [1, 1, 2, 4, 8, 20]);
 
   const summary = summarizeRanks([rankAgainstRandom(forty, 'm0'), second, rankAgainstRandom(forty, 'm20')]);
@@ -49,6 +50,8 @@ test('percentile ranges widen from the top move down to the top half', () => {
   assert.ok(Math.abs(byKey.best.randomShare - 2.5) < 1e-9);
   assert.ok(Math.abs(byKey.p10.randomShare - 10) < 1e-9);
   assert.equal(byKey.p10.worstLoss, 15);
+  assert.ok(Math.abs(byKey.top3.randomShare - 7.5) < 1e-9);
+  assert.ok(Math.abs(summary.deciles[0].randomShare - 10) < 1e-9);
 });
 
 test('a top range exposes the terrible second-best move through its worst loss', () => {
