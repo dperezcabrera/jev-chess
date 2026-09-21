@@ -20,7 +20,8 @@ from pico_ioc import DictSource, EnvSource, configuration, init
 from jev_chess.jev import JevError, JevMoveChooser
 from jev_chess.main import load_env
 
-POSITIONS_FILE = Path(__file__).with_name("positions.json")
+HERE = Path(__file__).parent
+POSITIONS_FILE = HERE.parent / "positions.json"
 
 
 def agreement(choices: list[str]) -> float:
@@ -266,20 +267,18 @@ def main() -> None:
     parser.add_argument("--positions", type=int, help="use only the first N positions")
     parser.add_argument("--workers", type=int, default=6, help="requests in flight at once")
     parser.add_argument("--seed", type=int, default=1)
-    parser.add_argument(
-        "--out", type=Path, default=Path("experiments/results/option-order"), help="output path without extension"
-    )
+    parser.add_argument("--out", type=Path, default=HERE, help="directory for report.json and runs.json.gz")
     parser.add_argument(
         "--reanalyze", action="store_true", help="rebuild the report from stored runs, without calling Jev"
     )
     args = parser.parse_args()
     if args.reanalyze:
-        with gzip.open(args.out.with_suffix(".runs.json.gz"), "rt") as handle:
+        with gzip.open((args.out / "runs.json.gz"), "rt") as handle:
             runs = json.load(handle)
-        previous = json.loads(args.out.with_suffix(".json").read_text())
+        previous = json.loads((args.out / "report.json").read_text())
         report = {key: previous[key] for key in ("design", "calls", "cost_usd", "retries")} | analyze(runs, args.seed)
         print(render(report))
-        args.out.with_suffix(".json").write_text(json.dumps(report, indent=1))
+        (args.out / "report.json").write_text(json.dumps(report, indent=1))
         return
     load_env()
     modules = ["jev_chess.jev", "jev_chess.provider", "jev_chess.settings"]
@@ -289,9 +288,9 @@ def main() -> None:
     report, runs = asyncio.run(measure(chooser, positions, args.repeats, args.rotations, args.seed, args.workers))
     print()
     print(render(report))
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.with_suffix(".json").write_text(json.dumps(report, indent=1))
-    with gzip.open(args.out.with_suffix(".runs.json.gz"), "wt") as handle:
+    args.out.mkdir(parents=True, exist_ok=True)
+    (args.out / "report.json").write_text(json.dumps(report, indent=1))
+    with gzip.open((args.out / "runs.json.gz"), "wt") as handle:
         json.dump(runs, handle, separators=(",", ":"))
 
 

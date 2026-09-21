@@ -4,8 +4,8 @@ from random import Random
 import chess
 import pytest
 
-from experiments.legality import DECOYS, KINDS, build_options, illegal_moves, interval, summarize
-from experiments.option_order import POSITIONS_FILE
+from experiments.legality.experiment import DECOYS, KINDS, build_options, illegal_moves, interval, summarize
+from experiments.option_order.experiment import POSITIONS_FILE
 
 
 def pairs(board: chess.Board, kind: str) -> set[str]:

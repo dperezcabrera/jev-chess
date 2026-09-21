@@ -4,7 +4,7 @@ from random import Random
 import chess
 import pytest
 
-from experiments.option_order import (
+from experiments.option_order.experiment import (
     POSITIONS_FILE,
     agreement,
     distance,

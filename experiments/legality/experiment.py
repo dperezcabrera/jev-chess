@@ -14,10 +14,9 @@ from statistics import mean
 import chess
 from pico_ioc import DictSource, EnvSource, configuration, init
 
+from experiments.option_order.experiment import POSITIONS_FILE
 from jev_chess.jev import JevError, JevMoveChooser
 from jev_chess.main import load_env
-
-from .option_order import POSITIONS_FILE
 
 DECOYS = 10
 SLIDERS = (chess.BISHOP, chess.ROOK, chess.QUEEN)
@@ -243,7 +242,7 @@ def main() -> None:
     parser.add_argument("--workers", type=int, default=6)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument(
-        "--out", type=Path, default=Path("experiments/results/legality"), help="output path without extension"
+        "--out", type=Path, default=Path(__file__).parent, help="directory for report.json and trials.json.gz"
     )
     args = parser.parse_args()
     load_env()
@@ -252,10 +251,10 @@ def main() -> None:
     positions = json.loads(POSITIONS_FILE.read_text())[: args.positions]
     report = asyncio.run(measure(container.get(JevMoveChooser), positions, args.draws, args.seed, args.workers))
     print(render(report))
-    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.mkdir(parents=True, exist_ok=True)
     trials = report.pop("trials")
-    args.out.with_suffix(".json").write_text(json.dumps(report, indent=1))
-    with gzip.open(args.out.with_suffix(".trials.json.gz"), "wt") as handle:
+    (args.out / "report.json").write_text(json.dumps(report, indent=1))
+    with gzip.open((args.out / "trials.json.gz"), "wt") as handle:
         json.dump(trials, handle, separators=(",", ":"))
 
 
