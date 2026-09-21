@@ -1,0 +1,88 @@
+{
+ "design": {
+  "positions": 120,
+  "draws_per_position": 3,
+  "decoys": 10,
+  "seed": 1,
+  "model": "jev-latest"
+ },
+ "calls": 720,
+ "cost_usd": 0.021355991999999973,
+ "retries": 0,
+ "variants": {
+  "implicit": {
+   "trials": 360,
+   "picked_the_legal_move": 0.19722222222222222,
+   "chance": 0.09090909090909091,
+   "mean_probability_on_the_legal_move": 0.15183333333333335,
+   "wrong_picks_by_kind": {
+    "blocked path": 117,
+    "wrong geometry": 94,
+    "own piece on target": 34,
+    "opponent piece": 28,
+    "empty origin": 13,
+    "leaves king in check": 3
+   },
+   "decoys_offered_by_kind": {
+    "empty origin": 741,
+    "opponent piece": 726,
+    "wrong geometry": 720,
+    "blocked path": 678,
+    "own piece on target": 642,
+    "leaves king in check": 93
+   },
+   "mean_probability_per_decoy_by_kind": {
+    "blocked path": 0.13176991150442477,
+    "empty origin": 0.046234817813765185,
+    "leaves king in check": 0.07559139784946237,
+    "opponent piece": 0.0615702479338843,
+    "own piece on target": 0.08219626168224299,
+    "wrong geometry": 0.10719444444444444
+   },
+   "interval": [
+    0.15555555555555556,
+    0.24166666666666667
+   ]
+  },
+  "explicit": {
+   "trials": 360,
+   "picked_the_legal_move": 0.49722222222222223,
+   "chance": 0.09090909090909091,
+   "mean_probability_on_the_legal_move": 0.3257777777777778,
+   "wrong_picks_by_kind": {
+    "own piece on target": 118,
+    "leaves king in check": 32,
+    "blocked path": 13,
+    "opponent piece": 10,
+    "wrong geometry": 5,
+    "empty origin": 3
+   },
+   "decoys_offered_by_kind": {
+    "empty origin": 741,
+    "opponent piece": 726,
+    "wrong geometry": 720,
+    "blocked path": 678,
+    "own piece on target": 642,
+    "leaves king in check": 93
+   },
+   "mean_probability_per_decoy_by_kind": {
+    "blocked path": 0.08292035398230088,
+    "empty origin": 0.013130904183535764,
+    "leaves king in check": 0.21247311827956988,
+    "opponent piece": 0.038911845730027546,
+    "own piece on target": 0.16556074766355142,
+    "wrong geometry": 0.031
+   },
+   "interval": [
+    0.44166666666666665,
+    0.5555555555555556
+   ]
+  }
+ },
+ "same_question_both_ways": {
+  "both right": 39,
+  "only when told": 140,
+  "only when not told": 32,
+  "both wrong": 149
+ }
+}
