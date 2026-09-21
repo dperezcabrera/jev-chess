@@ -1,13 +1,12 @@
+import asyncio
 import time
 from dataclasses import dataclass
 
 import chess
 import httpx
-from pico_httpx import http_client, post
-from pico_httpx.config import HttpSettings
-from pico_ioc import component
+from pico_ioc import cleanup, component
 
-from .settings import JevSettings, OpenRouterSettings
+from .provider import NO_KEY, Gateway, JevProvider, SessionCredentials
 
 
 class JevError(Exception):
@@ -15,27 +14,51 @@ class JevError(Exception):
 
 
 @dataclass(frozen=True)
-class Decision:
-    move: chess.Move
-    top: list[tuple[str, float]]
+class Answer:
+    choice: str
+    probabilities: dict[str, float]
     input_tokens: int
     output_tokens: int
     cost_usd: float
     seconds: float
 
 
-@http_client
-class JevApi:
-    def __init__(self, http: HttpSettings, openrouter: OpenRouterSettings):
-        self._pico_httpx_settings = http
-        self._pico_httpx_aclient = httpx.AsyncClient(
-            base_url=openrouter.base_url,
-            timeout=openrouter.timeout_seconds,
-            headers={"Authorization": f"Bearer {openrouter.api_key}"},
-        )
+@dataclass(frozen=True)
+class Decision:
+    move: chess.Move
+    san: str
+    top: list[tuple[str, float]]
+    probabilities: dict[str, float]
+    asked: list[str]
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+    seconds: float
 
-    @post("/v1/systemone")
-    async def system_one(self, json: dict) -> dict: ...
+
+@component
+class JevApi:
+    def __init__(self):
+        self._client = httpx.AsyncClient()
+
+    async def system_one(self, gateway: Gateway, body: dict) -> dict:
+        response = await self._client.post(
+            f"{gateway.base_url}/v1/systemone",
+            json=body,
+            headers={"Authorization": f"Bearer {gateway.api_key}"},
+            timeout=gateway.timeout_seconds,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    @cleanup
+    def close(self) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(self._client.aclose())
+        else:
+            loop.create_task(self._client.aclose())
 
 
 def describe(board: chess.Board, move: chess.Move) -> str:
@@ -63,53 +86,84 @@ def describe(board: chess.Board, move: chess.Move) -> str:
 
 @component
 class JevMoveChooser:
-    def __init__(self, api: JevApi, openrouter: OpenRouterSettings, jev: JevSettings):
+    def __init__(self, api: JevApi, provider: JevProvider):
         self._api = api
-        self._has_key = bool(openrouter.api_key)
-        self.model = jev.model
+        self._provider = provider
 
-    async def choose(self, board: chess.Board) -> Decision:
-        if not self._has_key:
-            raise JevError(
-                "OPENROUTER_API_KEY is not set. Copy .env.example to .env and add your key "
-                "(https://openrouter.ai/settings/keys)."
-            )
-        options = {board.san(m): m for m in board.legal_moves}
-        side = "white" if board.turn else "black"
+    def model_for(self, credentials: SessionCredentials | None = None) -> str:
+        return self._provider.gateway(credentials).model
+
+    async def ask(
+        self,
+        board: chess.Board,
+        instructions: str,
+        criteria: dict[str, str],
+        credentials: SessionCredentials | None = None,
+    ) -> Answer:
+        """One Choice question about a position: `criteria` maps each option label to its description."""
+        gateway = self._provider.gateway(credentials)
+        if not gateway.api_key:
+            raise JevError(NO_KEY)
         state = {
             "game": "chess",
-            "side_to_move": side,
+            "side_to_move": "white" if board.turn else "black",
             "fen": board.fen(),
             "board": str(board),
             "moves_so_far": chess.Board().variation_san(board.move_stack) if board.move_stack else "",
         }
-        question = {
-            "type": "choice",
-            "instructions": f"You are a strong chess player playing {side}. Which move is best? "
-            "Prefer checkmate, then winning material safely, then development and king safety. "
-            "Never leave a piece where it can be captured for free.",
-            "criteria": {san: describe(board, m) for san, m in options.items()},
-        }
+        question = {"type": "choice", "instructions": instructions, "criteria": criteria}
         started = time.perf_counter()
         try:
-            response = await self._api.system_one(
-                json={"model": self.model, "state": state, "questions": {"move": question}}
-            )
+            body = {"model": gateway.model, "state": state, "questions": {"move": question}}
+            response = await self._api.system_one(gateway, body)
             answer = response["answers"]["move"]
             choice = answer["choice"]
         except httpx.HTTPStatusError as e:
             raise JevError(f"HTTP {e.response.status_code}: {e.response.text[:300]}") from e
         except (httpx.HTTPError, KeyError, TypeError, ValueError) as e:
             raise JevError(f"request to Jev failed: {e}") from e
-        if choice not in options:
+        if choice not in criteria:
             raise JevError(f"Jev returned an unknown option: {choice!r}")
-        top = sorted(answer.get("probabilities", {}).items(), key=lambda kv: -kv[1])[:3]
         usage = response.get("usage") or {}
-        return Decision(
-            move=options[choice],
-            top=top,
+        return Answer(
+            choice=choice,
+            probabilities=answer.get("probabilities") or {},
             input_tokens=int(usage.get("input_tokens") or 0),
             output_tokens=int(usage.get("output_tokens") or 0),
-            cost_usd=float(usage.get("cost") or 0.0),
+            cost_usd=self._provider.cost_usd(response),
             seconds=time.perf_counter() - started,
+        )
+
+    async def choose(
+        self,
+        board: chess.Board,
+        credentials: SessionCredentials | None = None,
+        order: list[chess.Move] | None = None,
+    ) -> Decision:
+        """Ask Jev for a move; `order` lists the legal moves in the order to offer them, to test whether it matters."""
+        moves = list(board.legal_moves)
+        if order is not None:
+            if sorted(order, key=str) != sorted(moves, key=str):
+                raise ValueError("order must contain exactly the legal moves")
+            moves = order
+        options = {board.san(m): m for m in moves}
+        side = "white" if board.turn else "black"
+        instructions = (
+            f"You are a strong chess player playing {side}. Which move is best? "
+            "Prefer checkmate, then winning material safely, then development and king safety. "
+            "Never leave a piece where it can be captured for free."
+        )
+        answer = await self.ask(
+            board, instructions, {san: describe(board, m) for san, m in options.items()}, credentials
+        )
+        return Decision(
+            move=options[answer.choice],
+            san=answer.choice,
+            top=sorted(answer.probabilities.items(), key=lambda kv: -kv[1])[:3],
+            probabilities=answer.probabilities,
+            asked=list(options),
+            input_tokens=answer.input_tokens,
+            output_tokens=answer.output_tokens,
+            cost_usd=answer.cost_usd,
+            seconds=answer.seconds,
         )

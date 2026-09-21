@@ -8,3 +8,5 @@ tests
 .pytest_cache
 .ruff_cache
 screenshots
+experiments
+target

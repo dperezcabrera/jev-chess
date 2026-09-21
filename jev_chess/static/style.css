@@ -287,6 +287,35 @@ select {
 
 html:has(dialog[open]) { overflow: hidden; scrollbar-gutter: stable; }
 
+.topbar-button { border: 0; background: transparent; font: inherit; cursor: pointer; }
+.settings-dialog {
+  width: min(520px, 92vw);
+  height: min(520px, 85vh);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) * 2);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 var(--space-4) calc(var(--space-5) * 2) rgb(0 0 0 / 0.4);
+  overflow: hidden;
+}
+.settings-dialog::backdrop { background: rgb(20 16 10 / 0.6); backdrop-filter: blur(6px); }
+.settings-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-3); padding: 0 var(--space-4); }
+.settings-body input {
+  min-height: 44px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.field-hint { margin: 0; font-size: 0.875rem; color: var(--text-muted); }
+.field-hint a { color: var(--text); text-underline-offset: 3px; }
+.settings-error { min-height: 1.5em; margin: 0; font-size: 0.875rem; color: var(--danger); }
+.settings-dialog .pgn-footer { justify-content: space-between; }
+.settings-dialog .pgn-footer .button[hidden] { display: inline-flex; visibility: hidden; }
+
 .pgn-dialog {
   width: min(640px, 92vw);
   height: min(560px, 85vh);

@@ -7,6 +7,7 @@ import chess.pgn
 from pico_ioc import component
 
 from .jev import JevMoveChooser
+from .provider import SessionCredentials
 
 COLORS = {"white": {chess.WHITE}, "black": {chess.BLACK}, "none": set()}
 
@@ -17,8 +18,9 @@ class IllegalMove(Exception):
 
 @component(scope="session")
 class Game:
-    def __init__(self, chooser: JevMoveChooser):
+    def __init__(self, chooser: JevMoveChooser, credentials: SessionCredentials):
         self._chooser = chooser
+        self._credentials = credentials
         self._lock = asyncio.Lock()
         self._reset("white")
 
@@ -61,7 +63,7 @@ class Game:
             board = self._board
             if board.is_game_over(claim_draw=True) or board.turn in COLORS[self._human]:
                 raise IllegalMove("it is not Jev's turn")
-            decision = await self._chooser.choose(board)
+            decision = await self._chooser.choose(board, self._credentials)
             self._jev_top = [{"san": san, "probability": p} for san, p in decision.top]
             self._usage["calls"] += 1
             self._usage["input_tokens"] += decision.input_tokens
@@ -74,7 +76,7 @@ class Game:
     async def pgn(self) -> tuple[str, str]:
         async with self._lock:
             game = chess.pgn.Game.from_board(self._board)
-            jev = f"Jev ({self._chooser.model})"
+            jev = f"Jev ({self._chooser.model_for(self._credentials)})"
             game.headers["Event"] = "jev-chess"
             game.headers["Site"] = "https://github.com/dperezcabrera/jev-chess"
             game.headers["Date"] = datetime.now(UTC).strftime("%Y.%m.%d")

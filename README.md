@@ -1,6 +1,6 @@
 # How good is [Jev AI](https://typesafe.ai) at chess? Try to beat it
 
-`jev-chess`: play chess in your browser against [Jev](https://typesafe.ai), TypeSafe AI's System One model, called through [OpenRouter](https://openrouter.ai/typesafe).
+`jev-chess`: play chess in your browser against [Jev](https://typesafe.ai), TypeSafe AI's System One model, called through [Vercel AI Gateway](https://vercel.com/ai-gateway/models/jev) or [OpenRouter](https://openrouter.ai/typesafe).
 
 Jev does not generate text. It answers typed questions about a state with calibrated probabilities. That maps cleanly onto chess: every turn is **one Choice question whose options are the legal moves**. A chess position has at most 218 legal moves and a Choice accepts up to 255 options, so a single request always fits and Jev can never return an illegal move. A typical reply takes about 300 ms.
 
@@ -12,9 +12,10 @@ Jev does not generate text. It answers typed questions about a state with calibr
 
 - **A real board.** [chessground](https://github.com/lichess-org/chessground), the open source board from lichess: drag or click, legal moves only.
 - **Jev's confidence, every move.** The side panel shows the three options Jev weighed and the probability it gave each one.
-- **Cost and latency, live.** The footer adds up Jev calls, tokens, average latency and dollars for the current game, straight from OpenRouter's usage data. Jev playing both sides costs about $0.00005 per move at 300 to 400 ms each: a 20-move game for $0.0009.
+- **Cost and latency, live.** The footer adds up Jev calls, tokens, average latency and dollars for the current game, straight from the gateway's usage data. Jev playing both sides costs about $0.00005 per move at 300 to 400 ms each: a 20-move game for $0.0009.
 - **Engine analysis in your browser.** Stockfish 19 (WebAssembly, 1.8 MB) evaluates the game locally: evaluation chart, average centipawn loss (how many hundredths of a pawn each move gives away, see [Reading the numbers](#reading-the-numbers)), inaccuracies, mistakes and blunders per player. No server cost, no extra API calls. Depth is configurable.
 - **Is Jev better than chance?** For every position, Stockfish scores all legal moves and ranks the one that was played. A random mover sits on the 50th percentile by definition, so anything above that is signal. Two breakdowns sit next to what a random mover would score. By distance: the share of moves within 10, 25, 50, 100 and 200 centipawns of the best one, the absolute reference. By percentile range: top move, top 3 moves, top 2%, 5%, 10%, 20%, 30% and 50%, each with its average and its worst loss, because a top range can still hold a terrible move when a position has only one good one.
+- **Bring your own key.** A settings dialog behind the gear icon takes the provider and an API key for your session, so the Docker image runs without any configuration.
 - **PGN export**: a dialog shows the game in Portable Game Notation, ready to copy to the clipboard or download as a file.
 - **One game per browser session**, so several people can play on the same server.
 
@@ -26,22 +27,24 @@ In the game above Jev plays both sides and draws by repetition after 10 moves ea
 
 ## Quick start with Docker
 
-You only need Docker and an [OpenRouter API key](https://openrouter.ai/settings/keys). A prebuilt image is published on the GitHub Container Registry, so there is nothing to build:
+You only need Docker and one API key, from either gateway (see [Getting a key](#getting-a-key)). A prebuilt image is published on the GitHub Container Registry, so there is nothing to build:
 
 ```sh
 docker pull ghcr.io/dperezcabrera/jev-chess:latest
-docker run --rm -p 127.0.0.1:8000:8000 -e OPENROUTER_API_KEY=sk-or-... ghcr.io/dperezcabrera/jev-chess:latest
+docker run --rm -p 127.0.0.1:8000:8000 -e AI_GATEWAY_API_KEY=... ghcr.io/dperezcabrera/jev-chess:latest
 ```
+
+With an OpenRouter key, pass `-e OPENROUTER_API_KEY=sk-or-...` instead. The app uses whichever key it finds.
 
 Open http://localhost:8000.
 
 If the key is already exported in your shell, pass it through without typing it:
 
 ```sh
-docker run --rm -p 127.0.0.1:8000:8000 -e OPENROUTER_API_KEY ghcr.io/dperezcabrera/jev-chess:latest
+docker run --rm -p 127.0.0.1:8000:8000 -e AI_GATEWAY_API_KEY -e OPENROUTER_API_KEY ghcr.io/dperezcabrera/jev-chess:latest
 ```
 
-Available tags: `latest` and the version number, such as `0.1.0`.
+Available tags: `latest` and the version number, such as `0.2.0`.
 
 To build the image yourself instead:
 
@@ -53,6 +56,23 @@ docker run --rm -p 127.0.0.1:8000:8000 -e OPENROUTER_API_KEY jev-chess
 Or keep it in a `.env` file (see below) and use `--env-file .env`.
 
 The key is only read at run time. It is never baked into the image.
+
+## Getting a key
+
+Jev is served by two gateways with the same request format and the same list price, $0.042 per million input tokens with free output. Either one works; set a single variable.
+
+| Gateway | Variable | Where to get it | Notes |
+|---|---|---|---|
+| Vercel AI Gateway | `AI_GATEWAY_API_KEY` | [vercel.com/ai-gateway](https://vercel.com/ai-gateway), then API keys | Vercel announced Jev free of charge on the gateway until September 25, 2026 |
+| OpenRouter | `OPENROUTER_API_KEY` | [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) | Pay as you go; a full game costs about a tenth of a cent |
+
+When both keys are set, OpenRouter is used unless `JEV_PROVIDER=vercel` says otherwise.
+
+### Or set it from the browser
+
+No environment variable is needed to try the app: start it without a key, click the gear icon in the top bar, pick the provider and paste your key.
+
+A key entered this way is sent to the server, held in memory for that browser session only, used for that session's games and never sent back: the dialog only shows its last four characters. It is not written to disk, to `localStorage` or to a cookie, other visitors never use it, and it is gone when the server restarts. **Remove my key** goes back to the server's own key, if there is one. If you host the app for other people, serve it over HTTPS, because the key travels in the request body.
 
 ## Local setup
 
@@ -66,7 +86,13 @@ python3 -m venv .venv
 cp .env.example .env
 ```
 
-Open `.env` and paste your key:
+Open `.env` and paste one key:
+
+```sh
+AI_GATEWAY_API_KEY=...
+```
+
+or
 
 ```sh
 OPENROUTER_API_KEY=sk-or-...
@@ -84,10 +110,13 @@ Then run:
 
 | Variable | Default | Description |
 |---|---|---|
-| `OPENROUTER_API_KEY` | required | Your OpenRouter key |
-| `JEV_MODEL` | `jev-latest` | Model ID, for example `jev-1.13` to pin a version |
-| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api` | System One API base URL |
-| `OPENROUTER_TIMEOUT_SECONDS` | `30` | Request timeout |
+| `AI_GATEWAY_API_KEY` | one of the two | Your Vercel AI Gateway key |
+| `OPENROUTER_API_KEY` | one of the two | Your OpenRouter key |
+| `JEV_PROVIDER` | the gateway whose key is set | `vercel` or `openrouter`, only needed when both keys are set |
+| `JEV_MODEL` | `typesafe-ai/jev` on Vercel, `jev-latest` on OpenRouter | Model ID, for example `jev-1.13` on OpenRouter to pin a version |
+| `AI_GATEWAY_BASE_URL` | `https://ai-gateway.vercel.sh/typesafe` | Vercel's TypeSafe-compatible base URL |
+| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api` | OpenRouter's System One base URL |
+| `AI_GATEWAY_TIMEOUT_SECONDS`, `OPENROUTER_TIMEOUT_SECONDS` | `30` | Request timeout |
 | `SESSION_SECRET` | random per process | Signs the session cookie; set it to keep sessions across restarts of a multi-worker setup |
 | `HOST` | `127.0.0.1` | Bind address |
 | `PORT` | `8000` | Bind port |
@@ -102,7 +131,7 @@ Every browser session gets its own game with its own id, so several people can p
 
 ## How it works
 
-Each Jev turn sends one request to `POST https://openrouter.ai/api/v1/systemone`:
+Each Jev turn sends one request to the gateway's System One endpoint, `POST https://ai-gateway.vercel.sh/typesafe/v1/systemone` or `POST https://openrouter.ai/api/v1/systemone`. Both take the same body:
 
 ```json
 {
@@ -132,12 +161,13 @@ Each option carries a short description (captures, checks, checkmate, whether th
 
 ### Architecture
 
-The backend is built with the [pico framework](https://github.com/dperezcabrera/pico-ioc), a Spring Boot style stack for Python: constructor injection, controllers, declarative HTTP clients and typed settings.
+The backend is built with the [pico framework](https://github.com/dperezcabrera/pico-ioc), a Spring Boot style stack for Python: constructor injection, controllers, scopes and typed settings.
 
 | Module | Role |
 |---|---|
 | `jev_chess/settings.py` | `@configured` dataclasses bound to environment variables |
-| `jev_chess/jev.py` | `JevApi`, a declarative `@http_client` for the System One API, and `JevMoveChooser`, which turns a position into a Choice question |
+| `jev_chess/provider.py` | `JevProvider` resolves the gateway for a request: the session's own choice and key if the browser set one, else the server's. It hides what differs between gateways: base URL, default model and where the cost is reported. `SessionCredentials` is the session-scoped holder of a key typed in the browser |
+| `jev_chess/jev.py` | `JevApi`, the one place that talks HTTP to a gateway, and `JevMoveChooser`, which turns a position into a Choice question |
 | `jev_chess/game.py` | `Game`, a session-scoped `@component` holding one board per browser session |
 | `jev_chess/api.py` | `@controller` classes for the JSON API and the page, plus FastAPI configurers (sessions, static files, error mapping) |
 | `jev_chess/main.py` | App factory: loads `.env`, boots the container with `pico_boot.init` |
@@ -153,6 +183,9 @@ Rules, legality, game-over detection and PGN come from [python-chess](https://py
 | POST | `/api/move` | `{"from": "e2", "to": "e4", "promotion": "q"}` | Play a human move |
 | POST | `/api/jev` | | Ask Jev to move |
 | GET | `/api/pgn` | | Download the current game as PGN |
+| GET | `/api/settings` | | Provider, model and whether a key is set, never the key |
+| POST | `/api/settings` | `{"provider": "vercel" \| "openrouter", "api_key": "..."}` | Use this provider and key for the session |
+| DELETE | `/api/settings` | | Forget the session's key |
 | POST | `/api/new` | `{"human": "white" \| "black" \| "none"}` | Start a new game |
 
 Illegal or out-of-turn moves return `409`, malformed bodies `422`, and Jev or OpenRouter failures `502` with an `error` message.
@@ -170,6 +203,13 @@ Illegal or out-of-turn moves return `409`, malformed bodies `422`, and Jev or Op
 **Why centipawns are not enough.** Dropping 300 cp in an equal position loses the game; dropping 300 cp when you are already a queen up changes nothing. So moves are not labelled by centipawns: a move is an inaccuracy, mistake or blunder when it lowers the mover's winning chances by 10, 20 or 30 points, using the same centipawn-to-winning-chances curve as lichess. Evaluations are capped at 1000 cp so that one forced mate does not swamp an average, which also means a single move can lose at most 2000 cp.
 
 **Why the percentile is there.** Centipawn loss says how far a move is from perfect, not whether it beats guessing. The percentile answers that: it is the share of legal moves in the position that Stockfish scores strictly worse than the one played, with ties split evenly. A random mover sits on the 50th percentile by definition. The two are read together, because each hides something: a high percentile can still be a large loss when only one move in the position was good, and a small loss can be a low percentile when every move was fine. The metric is calibrated: in a long random-versus-random game both sides land on the 50th and 51st percentile.
+
+### Experiments on how Jev decides
+
+Two experiments over 120 positions, written up with their method, data and limits in [experiments/README.md](experiments/README.md):
+
+- **Does the order of the options matter?** Yes, when Jev is unsure. Two runs pick the same move 89.1% of the time with a fixed order and 71.6% when the options are reordered, yet there is almost no bias towards a slot in the list: reordering perturbs the probabilities and tips the close calls.
+- **Does Jev read the board?** Offered eleven moves of which only one is legal, it finds it 19.7% of the time when asked for the best move and 49.7% when told exactly one is legal, against 9.1% by chance. The illegal moves that fool it most are the subtle ones, such as leaving its own king in check.
 
 ## Development
 
@@ -194,7 +234,7 @@ gh auth token | docker login ghcr.io -u dperezcabrera --password-stdin
 Then build, tag and push:
 
 ```sh
-docker build -t ghcr.io/dperezcabrera/jev-chess:0.1.0 -t ghcr.io/dperezcabrera/jev-chess:latest .
+docker build -t ghcr.io/dperezcabrera/jev-chess:0.2.0 -t ghcr.io/dperezcabrera/jev-chess:latest .
 docker push --all-tags ghcr.io/dperezcabrera/jev-chess
 ```
 
@@ -204,6 +244,7 @@ A new package on the registry starts private. Make it public once, from the pack
 
 - [TypeSafe docs](https://docs.typesafe.ai): [Choice questions](https://docs.typesafe.ai/primitives/choice), [State](https://docs.typesafe.ai/concepts/state)
 - [Using the TypeSafe API through OpenRouter](https://openrouter.ai/docs/guides/community/typesafe-sdk)
+- [Using the TypeSafe API through Vercel AI Gateway](https://vercel.com/docs/ai-gateway/sdks-and-apis/typesafe)
 
 ## License
 

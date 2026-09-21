@@ -31,11 +31,9 @@ def app(make_container, make_client):
     def build(handler, api_key="test-key"):
         flat = FlatDictSource({"OPENROUTER_API_KEY": api_key, "JEV_MODEL": "jev-test"})
         config = configuration(flat, DictSource({}))
-        container = make_container("jev_chess", "pico_fastapi", "pico_httpx", config=config)
+        container = make_container("jev_chess", "pico_fastapi", config=config)
         build.container = container
-        container.get(JevApi)._pico_httpx_aclient = httpx.AsyncClient(
-            base_url="https://jev.test", transport=httpx.MockTransport(handler)
-        )
+        container.get(JevApi)._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         return make_client(container)
 
     return build
@@ -114,7 +112,7 @@ def test_missing_api_key_is_explained(app):
 
 
 def test_promotion_piece_is_honoured():
-    game = Game(chooser=None)
+    game = Game(chooser=None, credentials=None)
     game._board = chess.Board("8/P6k/8/8/8/8/8/K7 w - - 0 1")
     state = asyncio.run(game.human_move("a7", "a8", "n"))
     assert state["fen"].startswith("N7/")
@@ -151,3 +149,150 @@ def test_env_file_does_not_override_the_shell(tmp_path, monkeypatch):
     load_env(env)
     assert os.environ["JEV_TEST_A"] == "quoted" and os.environ["JEV_TEST_B"] == "from_shell"
     monkeypatch.delenv("JEV_TEST_A")
+
+
+def provider_for(make_container, **env):
+    from jev_chess.provider import JevProvider
+
+    container = make_container("jev_chess", "pico_fastapi", config=configuration(FlatDictSource(env), DictSource({})))
+    return container.get(JevProvider).gateway()
+
+
+def test_the_gateway_is_picked_from_whichever_key_is_set(make_container):
+    vercel = provider_for(make_container, AI_GATEWAY_API_KEY="vck")
+    assert (vercel.name, vercel.model, vercel.api_key) == ("vercel", "typesafe-ai/jev", "vck")
+    assert vercel.base_url == "https://ai-gateway.vercel.sh/typesafe"
+
+    openrouter = provider_for(make_container, OPENROUTER_API_KEY="ork")
+    assert (openrouter.name, openrouter.model) == ("openrouter", "jev-latest")
+    assert openrouter.base_url == "https://openrouter.ai/api"
+
+
+def test_an_explicit_provider_and_model_win(make_container):
+    both = provider_for(make_container, AI_GATEWAY_API_KEY="vck", OPENROUTER_API_KEY="ork")
+    assert both.name == "openrouter"
+    chosen = provider_for(
+        make_container,
+        AI_GATEWAY_API_KEY="vck",
+        OPENROUTER_API_KEY="ork",
+        JEV_PROVIDER="Vercel",
+        JEV_MODEL="typesafe-ai/jev-1.13",
+    )
+    assert (chosen.name, chosen.api_key, chosen.model) == ("vercel", "vck", "typesafe-ai/jev-1.13")
+
+
+def test_cost_is_read_from_either_gateway_shape():
+    from jev_chess.provider import JevProvider
+
+    assert JevProvider.cost_usd({"usage": {"input_tokens": 275, "cost": 0.00003}}) == 0.00003
+    vercel = {"usage": {"input_tokens": 275}, "provider_metadata": {"gateway": {"cost": "0.00001155"}}}
+    assert JevProvider.cost_usd(vercel) == pytest.approx(0.00001155)
+    assert JevProvider.cost_usd({}) == 0.0
+
+
+def test_a_game_played_through_vercel_adds_up_its_cost(make_container, make_client):
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert str(request.url) == "https://ai-gateway.vercel.sh/typesafe/v1/systemone"
+        assert request.headers["authorization"] == "Bearer vck"
+        assert body["model"] == "typesafe-ai/jev"
+        san = next(iter(body["questions"]["move"]["criteria"]))
+        answers = {"move": {"choice": san, "probabilities": {san: 1.0}}}
+        metadata = {"gateway": {"cost": "0.00001155"}}
+        return httpx.Response(
+            200,
+            json={
+                "answers": answers,
+                "usage": {"input_tokens": 275, "output_tokens": 20},
+                "provider_metadata": metadata,
+            },
+        )
+
+    config = configuration(FlatDictSource({"AI_GATEWAY_API_KEY": "vck"}), DictSource({}))
+    container = make_container("jev_chess", "pico_fastapi", config=config)
+    container.get(JevApi)._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = make_client(container)
+    client.post("/api/move", json={"from": "e2", "to": "e4"})
+    usage = client.post("/api/jev").json()["usage"]
+    assert usage["calls"] == 1 and usage["cost_usd"] == pytest.approx(0.00001155)
+
+
+def test_an_unknown_provider_is_rejected_at_startup(make_container):
+    from jev_chess.provider import ProviderError
+
+    with pytest.raises(Exception) as error:
+        provider_for(make_container, JEV_PROVIDER="azure")
+    assert "JEV_PROVIDER" in str(error.value) or isinstance(error.value, ProviderError)
+
+
+def test_without_any_key_the_error_names_both_options(app):
+    client = app(jev_stub(lambda criteria: next(iter(criteria)))[0], api_key="")
+    client.post("/api/new", json={"human": "black"})
+    message = client.post("/api/jev").json()["error"]
+    assert "AI_GATEWAY_API_KEY" in message and "OPENROUTER_API_KEY" in message
+
+
+def settings_app(make_container, make_client, seen, **env):
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        seen.append(
+            {"url": str(request.url), "authorization": request.headers["authorization"], "model": body["model"]}
+        )
+        san = next(iter(body["questions"]["move"]["criteria"]))
+        return httpx.Response(200, json={"answers": {"move": {"choice": san, "probabilities": {san: 1.0}}}})
+
+    container = make_container("jev_chess", "pico_fastapi", config=configuration(FlatDictSource(env), DictSource({})))
+    container.get(JevApi)._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    return container, make_client(container)
+
+
+def test_a_key_typed_in_the_browser_is_used_but_never_sent_back(make_container, make_client):
+    seen = []
+    _, client = settings_app(make_container, make_client, seen)
+    assert client.get("/api/settings").json()["key_source"] == "none"
+    client.post("/api/move", json={"from": "e2", "to": "e4"})
+    assert client.post("/api/jev").status_code == 502
+
+    saved = client.post("/api/settings", json={"provider": "vercel", "api_key": "  secret-key-abcd  "})
+    assert saved.json()["key_source"] == "session" and saved.json()["key_hint"] == "abcd"
+    assert saved.json()["provider"] == "vercel" and saved.json()["model"] == "typesafe-ai/jev"
+    assert "secret-key" not in saved.text and "secret-key" not in client.get("/api/settings").text
+
+    assert client.post("/api/jev").status_code == 200
+    assert seen == [
+        {
+            "url": "https://ai-gateway.vercel.sh/typesafe/v1/systemone",
+            "authorization": "Bearer secret-key-abcd",
+            "model": "typesafe-ai/jev",
+        }
+    ]
+
+
+def test_a_session_key_stays_in_its_own_session(make_container, make_client):
+    seen = []
+    container, alice = settings_app(make_container, make_client, seen, OPENROUTER_API_KEY="server-key")
+    bob = make_client(container)
+    alice.post("/api/settings", json={"provider": "vercel", "api_key": "alice-key-1234"})
+    assert bob.get("/api/settings").json() == {
+        **bob.get("/api/settings").json(),
+        "provider": "openrouter",
+        "key_source": "environment",
+        "key_hint": "",
+    }
+    bob.post("/api/move", json={"from": "e2", "to": "e4"})
+    bob.post("/api/jev")
+    assert seen[-1]["authorization"] == "Bearer server-key" and "openrouter.ai" in seen[-1]["url"]
+
+
+def test_forgetting_the_key_goes_back_to_the_server_one(make_container, make_client):
+    _, client = settings_app(make_container, make_client, [], OPENROUTER_API_KEY="server-key", JEV_MODEL="jev-1.13")
+    client.post("/api/settings", json={"provider": "vercel", "api_key": "mine-9999"})
+    assert client.get("/api/settings").json()["model"] == "typesafe-ai/jev"
+    cleared = client.delete("/api/settings").json()
+    assert (cleared["provider"], cleared["key_source"], cleared["model"]) == ("openrouter", "environment", "jev-1.13")
+
+
+def test_settings_reject_an_unknown_provider_and_an_oversized_key(make_container, make_client):
+    _, client = settings_app(make_container, make_client, [])
+    assert client.post("/api/settings", json={"provider": "azure", "api_key": "x"}).status_code == 422
+    assert client.post("/api/settings", json={"provider": "vercel", "api_key": "x" * 401}).status_code == 422

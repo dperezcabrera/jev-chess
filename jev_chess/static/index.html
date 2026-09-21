@@ -16,6 +16,11 @@
     <h1 class="brand">How good is <a href="https://typesafe.ai" target="_blank" rel="noopener">Jev AI</a> at chess?</h1>
     <ul>
       <li>
+        <button id="open-settings" class="topbar-link topbar-button" type="button" aria-label="Settings" title="Settings">
+          <svg viewBox="0 0 24 24" width="1.5em" height="1.5em" fill="currentColor" aria-hidden="true"><path d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6a.5.5 0 0 0 .1-.7l-2-3.4a.5.5 0 0 0-.6-.2l-2.5 1a7.3 7.3 0 0 0-1.7-1l-.4-2.6a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 0-.5.4l-.4 2.7a7.3 7.3 0 0 0-1.7 1l-2.5-1a.5.5 0 0 0-.6.2l-2 3.4a.5.5 0 0 0 .1.7L4.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6a.5.5 0 0 0-.1.7l2 3.4c.1.2.4.3.6.2l2.5-1c.5.4 1.1.7 1.7 1l.4 2.6c0 .3.2.5.5.5h4c.2 0 .5-.2.5-.4l.4-2.7c.6-.3 1.2-.6 1.7-1l2.5 1c.2.1.5 0 .6-.2l2-3.4a.5.5 0 0 0-.1-.7L19.4 13zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg>
+        </button>
+      </li>
+      <li>
         <a class="topbar-link" href="https://github.com/dperezcabrera/jev-chess" target="_blank" rel="noopener" aria-label="Source on GitHub" title="Source on GitHub">
           <svg viewBox="0 0 16 16" width="1.5em" height="1.5em" fill="currentColor" aria-hidden="true"><path d="M8 0a8 8 0 0 0-2.53 15.59c.4.07.55-.17.55-.38v-1.34c-2.23.48-2.7-1.07-2.7-1.07-.36-.93-.89-1.17-.89-1.17-.73-.5.05-.49.05-.49.8.06 1.23.83 1.23.83.72 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.77-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.19c0 .21.15.46.55.38A8 8 0 0 0 8 0z"/></svg>
         </a>
@@ -216,9 +221,44 @@
     through <a href="https://github.com/nmrugg/stockfish.js" target="_blank" rel="noopener">Stockfish.js</a>,
     rules by <a href="https://python-chess.readthedocs.io" target="_blank" rel="noopener">python-chess</a>,
     decisions by <a href="https://typesafe.ai" target="_blank" rel="noopener">Jev</a>
-    through <a href="https://openrouter.ai/typesafe" target="_blank" rel="noopener">OpenRouter</a>.
+    through <a href="https://vercel.com/ai-gateway/models/jev" target="_blank" rel="noopener">Vercel AI Gateway</a>
+    or <a href="https://openrouter.ai/typesafe" target="_blank" rel="noopener">OpenRouter</a>.
   </p>
 </main>
+<dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
+  <form id="settings-form" class="pgn-layout">
+    <header class="pgn-header">
+      <div>
+        <h2 id="settings-title">Settings</h2>
+        <p>Choose who serves Jev and bring your own key.</p>
+      </div>
+      <button id="settings-close" class="icon-button" type="button" aria-label="Close" title="Close">
+        <svg viewBox="0 0 24 24" width="1.5em" height="1.5em" fill="currentColor" aria-hidden="true"><path d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7l-1.4-1.4L9.2 12 2.9 5.7l1.4-1.4 6.3 6.3 6.3-6.3z" transform="translate(1.4 0)"/></svg>
+      </button>
+    </header>
+
+    <div class="settings-body">
+      <div class="field">
+        <label for="settings-provider">Provider</label>
+        <select id="settings-provider" name="provider"></select>
+        <p class="field-hint">Get a key at <a id="settings-key-link" href="https://vercel.com/ai-gateway" target="_blank" rel="noopener">vercel.com/ai-gateway</a>.</p>
+      </div>
+      <div class="field">
+        <label for="settings-key">API key</label>
+        <input id="settings-key" name="api_key" type="password" autocomplete="off" spellcheck="false" maxlength="400">
+        <p id="settings-state" class="field-hint" role="status" aria-live="polite">Loading</p>
+      </div>
+      <p class="field-hint">Your key is sent to this server, kept in memory for this browser session only, and never shown again. Leave the field empty to use the server's own key.</p>
+      <p id="settings-error" class="settings-error" role="alert"></p>
+    </div>
+
+    <footer class="pgn-footer">
+      <button id="settings-forget" class="button button-ghost" type="button">Remove my key</button>
+      <button id="settings-save" class="button" type="submit">Save</button>
+    </footer>
+  </form>
+</dialog>
+
 <dialog id="pgn-dialog" class="pgn-dialog" aria-labelledby="pgn-title">
   <div class="pgn-layout">
     <header class="pgn-header">

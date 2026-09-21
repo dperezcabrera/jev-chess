@@ -1,6 +1,6 @@
 [project]
 name = "jev-chess"
-version = "0.1.0"
+version = "0.2.0"
 description = "How good is Jev AI at chess? Play TypeSafe AI's System One model through OpenRouter and measure it with Stockfish"
 readme = "README.md"
 license = "GPL-3.0-or-later"
@@ -9,7 +9,7 @@ dependencies = [
     "chess>=1.11,<2",
     "pico-boot>=0.2.0",
     "pico-fastapi[session]>=0.4.1",
-    "pico-httpx>=0.1.0",
+    "httpx>=0.27",
     "uvicorn>=0.30",
 ]
 
@@ -31,6 +31,7 @@ jev_chess = ["static/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 
 [tool.ruff]
 line-length = 120

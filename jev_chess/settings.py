@@ -12,10 +12,19 @@ class OpenRouterSettings:
     timeout_seconds: float = 30.0
 
 
+@configured(prefix="AI_GATEWAY_", mapping="flat")
+@dataclass
+class VercelSettings:
+    api_key: str = ""
+    base_url: str = "https://ai-gateway.vercel.sh/typesafe"
+    timeout_seconds: float = 30.0
+
+
 @configured(prefix="JEV_", mapping="flat")
 @dataclass
 class JevSettings:
-    model: str = "jev-latest"
+    provider: str = ""
+    model: str = ""
 
 
 @configured(prefix="SESSION_", mapping="flat")

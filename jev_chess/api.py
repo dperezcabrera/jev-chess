@@ -3,7 +3,7 @@ from typing import Literal
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse, Response
-from pico_fastapi import FastApiConfigurer, controller, get, post
+from pico_fastapi import FastApiConfigurer, controller, delete, get, post
 from pico_ioc import component
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
@@ -11,6 +11,7 @@ from starlette.staticfiles import StaticFiles
 
 from .game import Game, IllegalMove
 from .jev import JevError
+from .provider import LABELS, JevProvider, ProviderError, SessionCredentials
 from .settings import SessionSettings
 
 STATIC_DIR = Path(__file__).with_name("static")
@@ -21,6 +22,11 @@ class MoveRequest(BaseModel):
     origin: str = Field(alias="from", pattern=SQUARE)
     target: str = Field(alias="to", pattern=SQUARE)
     promotion: Literal["q", "r", "b", "n"] = "q"
+
+
+class SettingsRequest(BaseModel):
+    provider: Literal["vercel", "openrouter"]
+    api_key: str = Field(default="", max_length=400)
 
 
 class NewGameRequest(BaseModel):
@@ -62,6 +68,38 @@ class GameController:
         return await self._game.new(body.human)
 
 
+@controller(prefix="/api/settings")
+class SettingsController:
+    def __init__(self, provider: JevProvider, credentials: SessionCredentials):
+        self._provider = provider
+        self._credentials = credentials
+
+    def _view(self) -> dict:
+        gateway = self._provider.gateway(self._credentials)
+        source = "session" if gateway.own_key else "environment" if gateway.api_key else "none"
+        return {
+            "provider": gateway.name,
+            "model": gateway.model,
+            "key_source": source,
+            "key_hint": gateway.api_key[-4:] if gateway.own_key else "",
+            "providers": [{"id": name, "label": label} for name, label in LABELS.items()],
+        }
+
+    @get("")
+    async def read(self):
+        return self._view()
+
+    @post("")
+    async def save(self, body: SettingsRequest):
+        self._credentials.store(body.provider, body.api_key)
+        return self._view()
+
+    @delete("")
+    async def forget(self):
+        self._credentials.clear()
+        return self._view()
+
+
 @component
 class SessionConfigurer(FastApiConfigurer):
     priority = -50
@@ -81,3 +119,4 @@ class WebConfigurer(FastApiConfigurer):
         app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
         app.add_exception_handler(IllegalMove, lambda _, e: JSONResponse({"error": str(e)}, status_code=409))
         app.add_exception_handler(JevError, lambda _, e: JSONResponse({"error": str(e)}, status_code=502))
+        app.add_exception_handler(ProviderError, lambda _, e: JSONResponse({"error": str(e)}, status_code=400))

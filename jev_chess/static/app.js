@@ -308,6 +308,67 @@ $('export-pgn').addEventListener('click', async () => {
   }
 });
 
+const KEY_LINKS = {
+  vercel: ['https://vercel.com/ai-gateway', 'vercel.com/ai-gateway'],
+  openrouter: ['https://openrouter.ai/settings/keys', 'openrouter.ai/settings/keys'],
+};
+
+function renderSettings(settings) {
+  const select = $('settings-provider');
+  select.replaceChildren(...settings.providers.map((provider) => new Option(provider.label, provider.id)));
+  select.value = settings.provider;
+  $('settings-key').value = '';
+  $('settings-forget').hidden = settings.key_source !== 'session';
+  $('settings-state').textContent = {
+    session: `Using your key ending in ${settings.key_hint}. Model: ${settings.model}.`,
+    environment: `Using the server's key. Model: ${settings.model}.`,
+    none: 'No key set yet. Jev cannot move until you add one.',
+  }[settings.key_source];
+  syncKeyLink();
+}
+
+function syncKeyLink() {
+  const [href, text] = KEY_LINKS[$('settings-provider').value] || KEY_LINKS.vercel;
+  $('settings-key-link').href = href;
+  $('settings-key-link').textContent = text;
+}
+
+async function settingsRequest(method, body) {
+  $('settings-error').textContent = '';
+  $('settings-save').disabled = true;
+  try {
+    const response = await fetch('api/settings', {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'The server rejected these settings.');
+    renderSettings(data);
+    return true;
+  } catch (error) {
+    $('settings-error').textContent = error.message;
+    return false;
+  } finally {
+    $('settings-save').disabled = false;
+  }
+}
+
+$('open-settings').addEventListener('click', () => {
+  $('settings-dialog').showModal();
+  settingsRequest('GET');
+});
+$('settings-close').addEventListener('click', () => $('settings-dialog').close());
+$('settings-provider').addEventListener('change', syncKeyLink);
+$('settings-forget').addEventListener('click', () => settingsRequest('DELETE'));
+$('settings-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const saved = await settingsRequest('POST', { provider: $('settings-provider').value, api_key: $('settings-key').value });
+  if (!saved) return;
+  $('settings-dialog').close();
+  if (current && current.jevs_turn) refresh();
+});
+
 async function copyText(text, source) {
   if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
   const range = document.createRange();
