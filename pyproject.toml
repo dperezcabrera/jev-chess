@@ -1,0 +1,36 @@
+[project]
+name = "jev-chess"
+version = "0.1.0"
+description = "Chess against Jev, TypeSafe AI's System One model, through OpenRouter"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+requires-python = ">=3.11"
+dependencies = [
+    "chess>=1.11,<2",
+    "pico-boot>=0.2.0",
+    "pico-fastapi[session]>=0.4.1",
+    "pico-httpx>=0.1.0",
+    "uvicorn>=0.30",
+]
+
+[project.optional-dependencies]
+dev = ["pico-testing>=0.2.0", "pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+jev-chess = "jev_chess.main:main"
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["jev_chess"]
+
+[tool.setuptools.package-data]
+jev_chess = ["static/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
