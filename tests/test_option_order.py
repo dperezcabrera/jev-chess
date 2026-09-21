@@ -6,6 +6,7 @@ import pytest
 
 from experiments.option_order.experiment import (
     POSITIONS_FILE,
+    _slot_terms,
     agreement,
     distance,
     interval,
@@ -80,7 +81,7 @@ def test_a_model_that_favours_the_first_option_is_caught():
     assert slot_bonus([runs], 0) == pytest.approx(0.4)
     assert slot_bonus([runs], -1) == pytest.approx(-0.2)
     assert position_effect([runs]) < -0.2
-    low, high = interval([runs, runs, runs], lambda sample: slot_bonus(sample, 0), Random(1), resamples=50)
+    low, high = interval([_slot_terms(runs, 0)] * 3, Random(1), resamples=50)
     assert low == pytest.approx(0.4) and high == pytest.approx(0.4)
 
 

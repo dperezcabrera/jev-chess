@@ -65,13 +65,21 @@ def _slope_terms(runs: list[dict]) -> tuple[float, float]:
     return covariance, spread
 
 
+def _ratio(terms: list[tuple[float, float]]) -> float | None:
+    bottom = sum(term[1] for term in terms)
+    return sum(term[0] for term in terms) / bottom if bottom else None
+
+
+def _slot_terms(runs: list[dict], slot: int) -> tuple[float, float]:
+    gaps = _slot_gaps(runs, slot)
+    return sum(gaps), len(gaps)
+
+
 def position_effect(positions: list[list[dict]]) -> float | None:
     """Change in a move's probability when it goes from first to last in the list, other things equal.
 
     A pooled slope with one intercept per move of each position, so a move's quality cancels out."""
-    terms = [_slope_terms(runs) for runs in positions]
-    spread = sum(term[1] for term in terms)
-    return sum(term[0] for term in terms) / spread if spread else None
+    return _ratio([_slope_terms(runs) for runs in positions])
 
 
 def _slot_gaps(runs: list[dict], slot: int) -> list[float]:
@@ -86,18 +94,16 @@ def _slot_gaps(runs: list[dict], slot: int) -> list[float]:
 
 def slot_bonus(positions: list[list[dict]], slot: int) -> float | None:
     """Mean probability of a move when it sits in `slot` (0 first, -1 last) minus the same move elsewhere."""
-    gaps = [gap for runs in positions for gap in _slot_gaps(runs, slot)]
-    return mean(gaps) if gaps else None
+    return _ratio([_slot_terms(runs, slot) for runs in positions])
 
 
-def interval(positions: list[list[dict]], statistic, rng: Random, resamples: int = 1000) -> tuple[float, float]:
-    """95% bootstrap interval, resampling whole positions because runs of one position are not independent."""
-    values = []
-    for _ in range(resamples):
-        value = statistic([rng.choice(positions) for _ in positions])
-        if value is not None:
-            values.append(value)
-    values.sort()
+def interval(terms: list[tuple[float, float]], rng: Random, resamples: int = 2000) -> tuple[float, float]:
+    """95% bootstrap interval of a ratio of sums, resampling whole positions because their runs are not independent.
+
+    Each position is reduced to its (numerator, denominator) once, so a resample is a sum and not a recount."""
+    values = sorted(
+        value for _ in range(resamples) if (value := _ratio([rng.choice(terms) for _ in terms])) is not None
+    )
     return values[int(0.025 * len(values))], values[int(0.975 * len(values)) - 1]
 
 
@@ -176,11 +182,11 @@ def overall(entries: list[dict], rotated: list[list[dict]], rng: Random) -> dict
         "first_move_chosen_rate": averaged("first_move_chosen"),
         "first_move_chosen_rate_if_order_did_not_matter": mean(1 / entry["legal_moves"] for entry in entries),
         "position_effect": position_effect(rotated),
-        "position_effect_interval": interval(rotated, position_effect, rng),
+        "position_effect_interval": interval([_slope_terms(runs) for runs in rotated], rng),
         "first_slot_bonus": slot_bonus(rotated, 0),
-        "first_slot_bonus_interval": interval(rotated, lambda sample: slot_bonus(sample, 0), rng),
+        "first_slot_bonus_interval": interval([_slot_terms(runs, 0) for runs in rotated], rng),
         "last_slot_bonus": slot_bonus(rotated, -1),
-        "last_slot_bonus_interval": interval(rotated, lambda sample: slot_bonus(sample, -1), rng),
+        "last_slot_bonus_interval": interval([_slot_terms(runs, -1) for runs in rotated], rng),
         "groups": [entry for entry in groups if entry],
     }
 

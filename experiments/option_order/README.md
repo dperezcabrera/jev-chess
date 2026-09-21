@@ -40,7 +40,7 @@ Reordering the options lowers pair agreement by **17.5 points** (95% interval 12
 
 | Bias towards a slot | Effect on a move's probability | 95% interval |
 |---|---:|---:|
-| Listed first | -0.65 points | -0.77 to -0.54 |
+| Listed first | -0.65 points | -0.77 to -0.53 |
 | Listed last | +0.41 points | +0.30 to +0.51 |
 | From first to last, slope | +1.09 points | +0.97 to +1.22 |
 
@@ -86,7 +86,7 @@ It needs a key, as the game does (see [Getting a key](../../README.md#getting-a-
 .venv/bin/python -m experiments.option_order     # 4,320 calls, about $0.22, about 15 minutes
 ```
 
-`--positions N` runs on the first N positions only, `--workers` sets how many calls are in flight and `--seed` fixes the orders. The analysis can be redone from the stored runs with no key and at no cost; it takes about a minute of processor time for the bootstrap intervals:
+`--positions N` runs on the first N positions only, `--workers` sets how many calls are in flight and `--seed` fixes the orders. The analysis can be redone from the stored runs with no key and at no cost; it takes a few seconds:
 
 ```sh
 .venv/bin/python -m experiments.option_order --reanalyze
