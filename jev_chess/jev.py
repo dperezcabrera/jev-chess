@@ -1,3 +1,6 @@
+import time
+from dataclasses import dataclass
+
 import chess
 import httpx
 from pico_httpx import http_client, post
@@ -9,6 +12,16 @@ from .settings import JevSettings, OpenRouterSettings
 
 class JevError(Exception):
     pass
+
+
+@dataclass(frozen=True)
+class Decision:
+    move: chess.Move
+    top: list[tuple[str, float]]
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+    seconds: float
 
 
 @http_client
@@ -53,9 +66,9 @@ class JevMoveChooser:
     def __init__(self, api: JevApi, openrouter: OpenRouterSettings, jev: JevSettings):
         self._api = api
         self._has_key = bool(openrouter.api_key)
-        self._model = jev.model
+        self.model = jev.model
 
-    async def choose(self, board: chess.Board) -> tuple[chess.Move, list[tuple[str, float]]]:
+    async def choose(self, board: chess.Board) -> Decision:
         if not self._has_key:
             raise JevError(
                 "OPENROUTER_API_KEY is not set. Copy .env.example to .env and add your key "
@@ -77,9 +90,10 @@ class JevMoveChooser:
             "Never leave a piece where it can be captured for free.",
             "criteria": {san: describe(board, m) for san, m in options.items()},
         }
+        started = time.perf_counter()
         try:
             response = await self._api.system_one(
-                json={"model": self._model, "state": state, "questions": {"move": question}}
+                json={"model": self.model, "state": state, "questions": {"move": question}}
             )
             answer = response["answers"]["move"]
             choice = answer["choice"]
@@ -90,4 +104,12 @@ class JevMoveChooser:
         if choice not in options:
             raise JevError(f"Jev returned an unknown option: {choice!r}")
         top = sorted(answer.get("probabilities", {}).items(), key=lambda kv: -kv[1])[:3]
-        return options[choice], top
+        usage = response.get("usage") or {}
+        return Decision(
+            move=options[choice],
+            top=top,
+            input_tokens=int(usage.get("input_tokens") or 0),
+            output_tokens=int(usage.get("output_tokens") or 0),
+            cost_usd=float(usage.get("cost") or 0.0),
+            seconds=time.perf_counter() - started,
+        )

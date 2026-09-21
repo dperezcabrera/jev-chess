@@ -3,22 +3,44 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>jev-chess</title>
+<title>How good is Jev at chess? Try to beat it</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 2 2'%3E%3Crect width='2' height='2' fill='%23b58863'/%3E%3Crect width='1' height='1' fill='%23f0d9b5'/%3E%3Crect x='1' y='1' width='1' height='1' fill='%23f0d9b5'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="static/vendor/chessground/chessground.base.css">
 <link rel="stylesheet" href="static/vendor/chessground/chessground.brown.css">
 <link rel="stylesheet" href="static/vendor/chessground/chessground.cburnett.css">
 <link rel="stylesheet" href="static/style.css">
 </head>
 <body>
+<header class="topbar">
+  <nav class="topbar-nav" aria-label="Main">
+    <h1 class="brand">How good is Jev at chess?</h1>
+    <ul>
+      <li>
+        <a class="topbar-link" href="https://github.com/dperezcabrera/jev-chess" target="_blank" rel="noopener" aria-label="Source on GitHub" title="Source on GitHub">
+          <svg viewBox="0 0 16 16" width="1.5em" height="1.5em" fill="currentColor" aria-hidden="true"><path d="M8 0a8 8 0 0 0-2.53 15.59c.4.07.55-.17.55-.38v-1.34c-2.23.48-2.7-1.07-2.7-1.07-.36-.93-.89-1.17-.89-1.17-.73-.5.05-.49.05-.49.8.06 1.23.83 1.23.83.72 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.77-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.19c0 .21.15.46.55.38A8 8 0 0 0 8 0z"/></svg>
+        </a>
+      </li>
+    </ul>
+  </nav>
+</header>
 <main class="layout">
   <section class="board-area" aria-label="Chess board">
-    <div id="board" class="board"></div>
+    <div class="board-frame">
+      <div id="board" class="board"></div>
+      <div id="promotion" class="promotion" role="dialog" aria-modal="true" aria-label="Choose a piece to promote to" hidden>
+        <div id="promotion-choices" class="promotion-choices">
+          <button class="promotion-choice" type="button" data-piece="q" aria-label="Promote to queen"><span class="cg-wrap" aria-hidden="true"><piece class="queen"></piece></span></button>
+          <button class="promotion-choice" type="button" data-piece="n" aria-label="Promote to knight"><span class="cg-wrap" aria-hidden="true"><piece class="knight"></piece></span></button>
+          <button class="promotion-choice" type="button" data-piece="r" aria-label="Promote to rook"><span class="cg-wrap" aria-hidden="true"><piece class="rook"></piece></span></button>
+          <button class="promotion-choice" type="button" data-piece="b" aria-label="Promote to bishop"><span class="cg-wrap" aria-hidden="true"><piece class="bishop"></piece></span></button>
+        </div>
+      </div>
+    </div>
   </section>
 
   <aside class="panel">
     <header class="panel-header">
-      <h1>jev-chess</h1>
-      <p class="subtitle">You against Jev, TypeSafe's System One model</p>
+      <p class="subtitle"><strong>Try to beat it.</strong> Jev is TypeSafe's System One model: it picks every move as a single typed decision.</p>
       <p class="game-id">Game <span id="game-id">&ndash;</span></p>
     </header>
 
@@ -48,22 +70,169 @@
     </section>
 
     <div class="controls">
-      <div class="field">
-        <label for="promotion">Promote to</label>
-        <select id="promotion">
-          <option value="q">Queen</option>
-          <option value="r">Rook</option>
-          <option value="b">Bishop</option>
-          <option value="n">Knight</option>
-        </select>
-      </div>
+      <button id="export-pgn" class="button button-ghost" type="button">
+        <svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm4 18H6V4h7v5h5v11zM8 12h8v2H8v-2zm0 4h8v2H8v-2z"/></svg>
+        Export PGN
+      </button>
       <button id="new-game" class="button" type="button">
         <svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true"><path d="M19 11h-6V5h-2v6H5v2h6v6h2v-6h6z"/></svg>
         New game
       </button>
     </div>
   </aside>
+
+  <section class="analysis" aria-labelledby="analysis-title">
+    <header class="analysis-header">
+      <div>
+        <h2 id="analysis-title">Game analysis</h2>
+        <p class="analysis-note"><a href="https://stockfishchess.org" target="_blank" rel="noopener">Stockfish 19</a> runs in your browser. Nothing is sent to a server.</p>
+      </div>
+      <div class="analysis-actions">
+        <div class="field">
+          <label for="depth">Depth</label>
+          <select id="depth"></select>
+        </div>
+      <button id="analyze" class="button" type="button" disabled>
+        <svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true"><path d="M4 20h16v-2H4v2zm2-4h3V9H6v7zm5 0h3V4h-3v12zm5 0h3v-5h-3v5z"/></svg>
+        <span id="analyze-label">Analyze game</span>
+      </button>
+      </div>
+    </header>
+
+    <div class="analysis-body">
+      <p id="analysis-message" class="analysis-message" role="status" aria-live="polite">Play a few moves, then analyze the game. Analysis starts on its own when the game ends.</p>
+      <progress id="analysis-progress" class="analysis-progress" max="1" value="0" hidden aria-label="Analysis progress"></progress>
+      <div id="analysis-result" hidden>
+        <div class="chart-wrap">
+          <div id="chart-tooltip" class="chart-tooltip" hidden></div>
+          <div id="chart" class="chart"></div>
+        </div>
+        <ul class="chart-legend" aria-label="Chart legend">
+          <li><span class="legend-dot legend-mistake" aria-hidden="true"></span>Mistake (?)</li>
+          <li><span class="legend-dot legend-blunder" aria-hidden="true"></span>Blunder (??)</li>
+        </ul>
+        <table class="summary">
+          <thead>
+            <tr>
+              <th class="col-text" scope="col">Player</th>
+              <th class="col-num" scope="col">Moves</th>
+              <th class="col-num" scope="col">Avg. centipawn loss</th>
+              <th class="col-num" scope="col">Inaccuracies</th>
+              <th class="col-num" scope="col">Mistakes</th>
+              <th class="col-num" scope="col">Blunders</th>
+            </tr>
+          </thead>
+          <tbody id="summary"></tbody>
+        </table>
+
+        <section class="versus" aria-labelledby="versus-title">
+          <h3 id="versus-title">Each player versus a random mover</h3>
+          <p class="analysis-note">Stockfish scores every legal move in each position and ranks the move that was played. A random mover lands on the 50th percentile and spreads evenly, 10% of its moves in every decile. Centipawn figures are absolute: how far behind the best move.</p>
+
+          <table class="summary versus-table">
+            <thead>
+              <tr>
+                <th class="col-text" scope="col">Player</th>
+                <th class="col-num" scope="col">Avg. percentile</th>
+                <th class="col-num" scope="col">Avg. loss per move</th>
+                <th class="col-num" scope="col">Random mover's loss</th>
+              </tr>
+            </thead>
+            <tbody id="versus-rows"></tbody>
+          </table>
+
+          <h4>By distance to the best move</h4>
+          <p class="analysis-note">Absolute quality: how many moves stayed within a given number of centipawns of the best one.</p>
+          <table class="summary group-table">
+            <thead>
+              <tr>
+                <th class="col-text" scope="col">Moves played</th>
+                <th class="col-num" scope="col" id="distance-white">White</th>
+                <th class="col-num" scope="col">Random</th>
+                <th class="col-num" scope="col" id="distance-black">Black</th>
+                <th class="col-num" scope="col">Random</th>
+              </tr>
+            </thead>
+            <tbody id="distance-rows"></tbody>
+          </table>
+
+          <h4>By percentile range</h4>
+          <p class="analysis-note">Relative quality: a top range can still hold terrible moves when a position has only one good one, so each range shows its average and its worst loss.</p>
+          <table class="summary group-table">
+            <thead>
+              <tr>
+                <th class="col-text" scope="col">Moves played from</th>
+                <th class="col-num" scope="col">Avg. behind best</th>
+                <th class="col-num" scope="col">Worst in range</th>
+                <th class="col-num" scope="col" id="percentile-white">White</th>
+                <th class="col-num" scope="col">Random</th>
+                <th class="col-num" scope="col" id="percentile-black">Black</th>
+                <th class="col-num" scope="col">Random</th>
+              </tr>
+            </thead>
+            <tbody id="percentile-rows"></tbody>
+          </table>
+
+          <h4>All deciles</h4>
+          <ul class="chart-legend" aria-label="Chart legend">
+            <li><span class="legend-box legend-white" aria-hidden="true"></span><span id="legend-white">White</span></li>
+            <li><span class="legend-box legend-black" aria-hidden="true"></span><span id="legend-black">Black</span></li>
+          </ul>
+          <div class="chart-wrap">
+            <div id="decile-tooltip" class="chart-tooltip" hidden></div>
+            <div id="deciles" class="chart"></div>
+          </div>
+          <table class="summary decile-table">
+            <thead>
+              <tr>
+                <th class="col-text" scope="col">Decile of legal moves</th>
+                <th class="col-num" scope="col">Avg. centipawns behind best</th>
+                <th class="col-num" scope="col" id="decile-white">White</th>
+                <th class="col-num" scope="col" id="decile-black">Black</th>
+              </tr>
+            </thead>
+            <tbody id="decile-rows"></tbody>
+          </table>
+        </section>
+      </div>
+    </div>
+  </section>
+
+  <footer class="usage" aria-label="Jev usage for this game">
+    <dl>
+      <div><dt>Jev calls</dt><dd id="usage-calls">0</dd></div>
+      <div><dt>Input tokens</dt><dd id="usage-input">0</dd></div>
+      <div><dt>Output tokens</dt><dd id="usage-output">0</dd></div>
+      <div><dt>Avg. latency</dt><dd id="usage-latency">&ndash;</dd></div>
+      <div><dt>Cost</dt><dd id="usage-cost">$0.000000</dd></div>
+    </dl>
+  </footer>
+
+  <p class="credits">
+    Board by <a href="https://github.com/lichess-org/chessground" target="_blank" rel="noopener">chessground</a>,
+    engine by <a href="https://stockfishchess.org" target="_blank" rel="noopener">Stockfish</a>
+    through <a href="https://github.com/nmrugg/stockfish.js" target="_blank" rel="noopener">Stockfish.js</a>,
+    rules by <a href="https://python-chess.readthedocs.io" target="_blank" rel="noopener">python-chess</a>,
+    decisions by <a href="https://typesafe.ai" target="_blank" rel="noopener">Jev</a>
+    through <a href="https://openrouter.ai/typesafe" target="_blank" rel="noopener">OpenRouter</a>.
+  </p>
 </main>
+<dialog id="pgn-dialog" class="pgn-dialog" aria-labelledby="pgn-title">
+  <div class="pgn-layout">
+    <header class="pgn-header">
+      <h2 id="pgn-title">Game PGN</h2>
+      <p>Portable Game Notation: paste it into lichess, chess.com or any chess program.</p>
+    </header>
+    <pre id="pgn-text" class="pgn-text" tabindex="0" aria-label="PGN of the current game">Loading</pre>
+    <footer class="pgn-footer">
+      <form method="dialog"><button class="button button-ghost" type="submit">Close</button></form>
+      <a id="pgn-download" class="button" href="api/pgn" download>
+        <svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true"><path d="M5 20h14v-2H5v2zm7-4 5-5-1.4-1.4-2.6 2.6V4h-2v8.2L8.4 9.6 7 11l5 5z"/></svg>
+        Download file
+      </a>
+    </footer>
+  </div>
+</dialog>
 <dialog id="side-dialog" class="side-dialog" aria-labelledby="side-title">
   <form id="side-form" method="dialog" class="side-form">
     <header class="side-header">
@@ -71,37 +240,27 @@
       <p>Jev answers every move with a single typed decision.</p>
     </header>
 
-    <fieldset class="side-options">
-      <legend class="visually-hidden">Side</legend>
-
-      <label class="side-card side-card-white">
-        <input type="radio" name="human" value="white" checked>
+    <div class="side-options" role="group" aria-labelledby="side-title">
+      <button class="side-card side-card-white" type="submit" name="human" value="white">
         <span class="side-art cg-wrap" aria-hidden="true"><piece class="king white"></piece></span>
         <span class="side-name">White</span>
         <span class="side-hint">You move first</span>
-        <svg class="side-check" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm-1.6 14.6L6 12.2l1.4-1.4 3 3 6.2-6.2L18 9l-7.6 7.6z"/></svg>
-      </label>
-
-      <label class="side-card side-card-black">
-        <input type="radio" name="human" value="black">
+      </button>
+      <button class="side-card side-card-black" type="submit" name="human" value="black">
         <span class="side-art cg-wrap" aria-hidden="true"><piece class="king black"></piece></span>
         <span class="side-name">Black</span>
         <span class="side-hint">Jev opens the game</span>
-        <svg class="side-check" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm-1.6 14.6L6 12.2l1.4-1.4 3 3 6.2-6.2L18 9l-7.6 7.6z"/></svg>
-      </label>
-
-      <label class="side-card side-card-watch">
-        <input type="radio" name="human" value="none">
+      </button>
+      <button class="side-card side-card-watch" type="submit" name="human" value="none">
         <span class="side-art side-art-pair cg-wrap" aria-hidden="true"><piece class="king white"></piece><piece class="king black"></piece></span>
         <span class="side-name">Spectator</span>
         <span class="side-hint">Jev plays both sides</span>
-        <svg class="side-check" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm-1.6 14.6L6 12.2l1.4-1.4 3 3 6.2-6.2L18 9l-7.6 7.6z"/></svg>
-      </label>
-    </fieldset>
+      </button>
+    </div>
 
     <footer class="side-footer">
+      <p class="side-footnote">Pick a side to start playing right away.</p>
       <button id="side-cancel" class="button button-ghost" type="button">Cancel</button>
-      <button id="side-start" class="button" type="submit">Start game</button>
     </footer>
   </form>
 </dialog>

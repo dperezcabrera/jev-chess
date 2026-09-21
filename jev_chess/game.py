@@ -1,7 +1,9 @@
 import asyncio
 import uuid
+from datetime import UTC, datetime
 
 import chess
+import chess.pgn
 from pico_ioc import component
 
 from .jev import JevMoveChooser
@@ -25,6 +27,7 @@ class Game:
         self._board = chess.Board()
         self._human = human
         self._jev_top: list[dict] = []
+        self._usage = {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0, "seconds": 0.0}
 
     async def new(self, human: str) -> dict:
         if human not in COLORS:
@@ -58,10 +61,27 @@ class Game:
             board = self._board
             if board.is_game_over(claim_draw=True) or board.turn in COLORS[self._human]:
                 raise IllegalMove("it is not Jev's turn")
-            move, top = await self._chooser.choose(board)
-            self._jev_top = [{"san": san, "probability": p} for san, p in top]
-            board.push(move)
+            decision = await self._chooser.choose(board)
+            self._jev_top = [{"san": san, "probability": p} for san, p in decision.top]
+            self._usage["calls"] += 1
+            self._usage["input_tokens"] += decision.input_tokens
+            self._usage["output_tokens"] += decision.output_tokens
+            self._usage["cost_usd"] += decision.cost_usd
+            self._usage["seconds"] += decision.seconds
+            board.push(decision.move)
             return self._snapshot()
+
+    async def pgn(self) -> tuple[str, str]:
+        async with self._lock:
+            game = chess.pgn.Game.from_board(self._board)
+            jev = f"Jev ({self._chooser.model})"
+            game.headers["Event"] = "jev-chess"
+            game.headers["Site"] = "https://github.com/dperezcabrera/jev-chess"
+            game.headers["Date"] = datetime.now(UTC).strftime("%Y.%m.%d")
+            game.headers["White"] = "Human" if self._human == "white" else jev
+            game.headers["Black"] = "Human" if self._human == "black" else jev
+            game.headers["Result"] = self._board.result(claim_draw=True)
+            return f"jev-chess-{self._id}.pgn", str(game) + "\n"
 
     def _snapshot(self) -> dict:
         board = self._board
@@ -94,5 +114,7 @@ class Game:
             "over": over,
             "result": result,
             "history": history,
+            "moves_uci": [move.uci() for move in board.move_stack],
+            "usage": dict(self._usage),
             "jev_top": self._jev_top,
         }

@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pico_fastapi import FastApiConfigurer, controller, get, post
 from pico_ioc import component
 from pydantic import BaseModel, Field
@@ -42,6 +42,12 @@ class GameController:
     @get("/state")
     async def state(self):
         return await self._game.snapshot()
+
+    @get("/pgn")
+    async def pgn(self):
+        filename, text = await self._game.pgn()
+        headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+        return Response(text, media_type="application/x-chess-pgn", headers=headers)
 
     @post("/move")
     async def move(self, body: MoveRequest):

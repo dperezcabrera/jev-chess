@@ -1,4 +1,5 @@
 import { Chessground } from './vendor/chessground/chessground.min.js';
+import { DEPTHS, analyzeGame, decileLabel, renderChart, renderDeciles } from './analysis.js';
 
 const $ = (id) => document.getElementById(id);
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -6,6 +7,8 @@ const DECISION_ROWS = 3;
 
 let generation = 0;
 let currentHuman = 'white';
+let current = null;
+let analysis = { gameId: null, done: '', glyphs: [], abort: null };
 
 const ground = Chessground($('board'), {
   animation: { enabled: !reducedMotion },
@@ -55,7 +58,8 @@ function renderMoves(history) {
   $('moves-empty').hidden = history.length > 0;
   for (let i = 0; i < history.length; i += 2) {
     const item = document.createElement('li');
-    for (const [className, text] of [['number', `${i / 2 + 1}.`], ['', history[i]], ['', history[i + 1] || '']]) {
+    const glyph = (ply) => (history[ply] ? history[ply] + (analysis.glyphs[ply] || '') : '');
+    for (const [className, text] of [['number', `${i / 2 + 1}.`], ['', glyph(i)], ['', glyph(i + 1)]]) {
       const span = document.createElement('span');
       span.className = className;
       span.textContent = text;
@@ -78,7 +82,10 @@ function render(state) {
       dests: new Map(Object.entries(state.dests)),
     },
   });
+  current = state;
   currentHuman = state.human;
+  renderUsage(state.usage);
+  syncAnalysis(state);
   $('game-id').textContent = state.game_id;
   renderDecision(state.jev_top);
   renderMoves(state.history);
@@ -86,6 +93,125 @@ function render(state) {
   else if (state.humans_turn) setStatus(`Your move (${state.turn})`);
   else askJev();
 }
+
+function renderUsage(usage) {
+  $('usage-calls').textContent = usage.calls.toLocaleString('en-US');
+  $('usage-input').textContent = usage.input_tokens.toLocaleString('en-US');
+  $('usage-output').textContent = usage.output_tokens.toLocaleString('en-US');
+  $('usage-latency').textContent = usage.calls ? `${Math.round((usage.seconds / usage.calls) * 1000)} ms` : '\u2013';
+  $('usage-cost').textContent = `$${usage.cost_usd.toFixed(6)}`;
+}
+
+function setAnalysisMessage(text, { error = false } = {}) {
+  $('analysis-message').textContent = text;
+  $('analysis-message').hidden = !text;
+  $('analysis-message').classList.toggle('error', error);
+}
+
+function syncAnalysis(state) {
+  const stale = analysis.gameId !== state.game_id || parseInt(analysis.done, 10) > state.history.length;
+  if (stale) {
+    if (analysis.abort) analysis.abort.abort();
+    analysis = { gameId: state.game_id, done: '', glyphs: [], abort: null };
+    $('analysis-result').hidden = true;
+    $('analysis-progress').hidden = true;
+    setAnalysisMessage('Play a few moves, then analyze the game. Analysis starts on its own when the game ends.');
+  }
+  $('analyze').disabled = state.history.length < 2 || analysis.abort !== null;
+  if (state.over && analysis.done !== analysisKey(state) && !analysis.abort) runAnalysis();
+}
+
+const analysisKey = (state) => `${state.history.length}:${$('depth').value}`;
+
+async function runAnalysis() {
+  const state = current;
+  const key = analysisKey(state);
+  const abort = new AbortController();
+  analysis.abort = abort;
+  $('analyze').disabled = true;
+  $('analyze-label').textContent = 'Analyzing';
+  $('analysis-result').hidden = true;
+  $('analysis-progress').hidden = false;
+  $('analysis-progress').value = 0;
+  setAnalysisMessage(`Analyzing ${state.history.length} moves at ${DEPTHS[$('depth').value].label.toLowerCase()} depth`);
+  try {
+    const result = await analyzeGame(state.moves_uci, state.history, DEPTHS[$('depth').value], {
+      signal: abort.signal,
+      onProgress: (done, total) => { $('analysis-progress').value = done / total; },
+    });
+    if (!result || abort.signal.aborted) return;
+    analysis.done = key;
+    analysis.glyphs = result.moves.map((move) => (move.judgement ? move.judgement.glyph : ''));
+    setAnalysisMessage('');
+    $('analysis-result').hidden = false;
+    renderChart($('chart'), $('chart-tooltip'), result);
+    renderSummary(result.summary);
+    renderVersusRandom(result);
+    renderMoves(current.history);
+  } catch (error) {
+    if (!abort.signal.aborted) setAnalysisMessage(`Analysis failed: ${error.message}`, { error: true });
+  } finally {
+    if (analysis.abort === abort) analysis.abort = null;
+    $('analysis-progress').hidden = true;
+    $('analyze-label').textContent = 'Analyze game';
+    $('analyze').disabled = !current || current.history.length < 2 || analysis.abort !== null;
+  }
+}
+
+function playerName(color) {
+  const who = currentHuman === color ? 'You' : 'Jev';
+  return `${color === 'white' ? 'White' : 'Black'} (${who})`;
+}
+
+function fillRows(body, rows) {
+  body.replaceChildren();
+  for (const [name, ...values] of rows) {
+    const row = body.insertRow();
+    const first = row.insertCell();
+    first.className = 'col-text';
+    first.textContent = name;
+    for (const value of values) {
+      const cell = row.insertCell();
+      cell.className = 'col-num';
+      cell.textContent = value;
+    }
+  }
+}
+
+function renderVersusRandom(result) {
+  const versus = result.versusRandom;
+  const colors = ['white', 'black'];
+  const cp = (value) => (value === null ? '\u2013' : `${Math.round(value)} cp`);
+  const share = (entry) => `${Math.round(entry.share)}% (${entry.picks})`;
+  for (const color of colors) {
+    for (const prefix of ['percentile', 'distance', 'decile', 'legend']) $(`${prefix}-${color}`).textContent = playerName(color);
+  }
+  fillRows($('versus-rows'), colors.map((color) => [
+    playerName(color),
+    versus[color].decisions ? String(Math.round(versus[color].percentile)) : '\u2013',
+    cp(versus[color].decisions ? versus[color].loss : null),
+    cp(versus[color].decisions ? versus[color].randomLoss : null),
+  ]));
+  const versusRandomCells = (name, index) => colors.flatMap((color) => [share(versus[color][name][index]), `${Math.round(versus[color][name][index].randomShare)}%`]);
+  fillRows($('percentile-rows'), versus.all.percentileRanges.map((group, index) => [group.label, cp(group.averageLoss), cp(group.worstLoss), ...versusRandomCells('percentileRanges', index)]));
+  fillRows($('distance-rows'), versus.all.distanceBands.map((group, index) => [group.label, ...versusRandomCells('distanceBands', index)]));
+  fillRows($('decile-rows'), versus.all.deciles.map((decile, index) => [
+    decileLabel(decile.decile),
+    cp(decile.averageLoss),
+    ...colors.map((color) => share(versus[color].deciles[index])),
+  ]));
+  renderDeciles($('deciles'), $('decile-tooltip'), colors.map((color) => ({ color, name: playerName(color), deciles: versus[color].deciles })));
+}
+
+function renderSummary(summary) {
+  fillRows($('summary'), ['white', 'black'].map((color) => {
+    const stats = summary[color];
+    return [playerName(color), ...[stats.moves, stats.acpl, stats.inaccuracy, stats.mistake, stats.blunder].map(String)];
+  }));
+}
+
+for (const [key, depth] of Object.entries(DEPTHS)) $('depth').add(new Option(`${depth.label} (depth ${depth.game})`, key, key === 'standard', key === 'standard'));
+$('analyze').addEventListener('click', runAnalysis);
 
 async function askJev() {
   const current = generation;
@@ -98,10 +224,52 @@ async function askJev() {
   }
 }
 
+function askPromotion(to, color) {
+  const overlay = $('promotion');
+  const choices = $('promotion-choices');
+  const buttons = [...choices.querySelectorAll('button')];
+  const whiteView = ground.state.orientation === 'white';
+  const file = to.charCodeAt(0) - 97;
+  choices.style.setProperty('--promotion-column', whiteView ? file : 7 - file);
+  choices.classList.toggle('from-bottom', (to[1] === '8') !== whiteView);
+  for (const button of buttons) button.querySelector('piece').className = `${button.getAttribute('aria-label').split(' ').pop()} ${color}`;
+  overlay.hidden = false;
+  buttons[0].focus();
+
+  return new Promise((resolve) => {
+    const finish = (piece) => {
+      overlay.hidden = true;
+      overlay.removeEventListener('click', onClick);
+      overlay.removeEventListener('keydown', onKey);
+      resolve(piece);
+    };
+    const onClick = (event) => {
+      const button = event.target.closest('button');
+      finish(button ? button.dataset.piece : null);
+    };
+    const onKey = (event) => {
+      if (event.key === 'Escape') finish(null);
+      if (event.key !== 'Tab') return;
+      event.preventDefault();
+      const next = buttons.indexOf(document.activeElement) + (event.shiftKey ? -1 : 1);
+      buttons[(next + buttons.length) % buttons.length].focus();
+    };
+    overlay.addEventListener('click', onClick);
+    overlay.addEventListener('keydown', onKey);
+  });
+}
+
 async function onHumanMove(from, to) {
   const current = generation;
+  const moved = ground.state.pieces.get(to);
+  let promotion = 'q';
+  if (moved && moved.role === 'pawn' && (to[1] === '8' || to[1] === '1')) {
+    promotion = await askPromotion(to, moved.color);
+    if (current !== generation) return;
+    if (promotion === null) return render(await api('/api/state'));
+  }
   try {
-    const state = await api('/api/move', { from, to, promotion: $('promotion').value });
+    const state = await api('/api/move', { from, to, promotion });
     if (current === generation) render(state);
   } catch (error) {
     if (current !== generation) return;
@@ -124,22 +292,36 @@ async function refresh() {
 
 $('retry').addEventListener('click', refresh);
 
+$('export-pgn').addEventListener('click', async () => {
+  const text = $('pgn-text');
+  text.textContent = 'Loading';
+  text.classList.remove('error');
+  $('pgn-dialog').showModal();
+  try {
+    const response = await fetch('api/pgn');
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    text.textContent = await response.text();
+  } catch (error) {
+    text.textContent = `Could not load the PGN: ${error.message}`;
+    text.classList.add('error');
+  }
+});
+
 const dialog = $('side-dialog');
 
 function openSideDialog({ cancellable }) {
   $('side-cancel').hidden = !cancellable;
   dialog.showModal();
-  $('side-form').elements.human.value = currentHuman;
-  dialog.querySelector('input:checked').focus();
+  dialog.querySelector(`button[value="${currentHuman}"]`).focus();
 }
 
 $('new-game').addEventListener('click', () => openSideDialog({ cancellable: true }));
 $('side-cancel').addEventListener('click', () => dialog.close());
 
-$('side-form').addEventListener('submit', async () => {
+$('side-form').addEventListener('submit', async (event) => {
   const current = ++generation;
   try {
-    const state = await api('/api/new', { human: $('side-form').elements.human.value });
+    const state = await api('/api/new', { human: event.submitter.value });
     if (current === generation) render(state);
   } catch (error) {
     if (current === generation) setStatus(error.message, { error: true, retry: true });

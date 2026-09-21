@@ -19,7 +19,9 @@ def jev_stub(pick):
         body = json.loads(request.content)
         seen.append(body)
         san = pick(body["questions"]["move"]["criteria"])
-        return httpx.Response(200, json={"answers": {"move": {"choice": san, "probabilities": {san: 1.0}}}})
+        answers = {"move": {"choice": san, "probabilities": {san: 1.0}}}
+        usage = {"input_tokens": 300, "output_tokens": 20, "cost": 0.00002}
+        return httpx.Response(200, json={"answers": answers, "usage": usage})
 
     return handler, seen
 
@@ -62,8 +64,13 @@ def test_full_turn_cycle(app):
     assert request["model"] == "jev-test" and request["state"]["side_to_move"] == "black"
     assert question["type"] == "choice" and len(question["criteria"]) == 20
 
+    assert state["moves_uci"][0] == "e2e4" and len(state["moves_uci"]) == 2
+    usage = state["usage"]
+    assert usage["calls"] == 1 and usage["input_tokens"] == 300 and usage["output_tokens"] == 20
+    assert usage["cost_usd"] == pytest.approx(0.00002) and usage["seconds"] >= 0
+
     state = client.post("/api/new", json={"human": "black"}).json()
-    assert state["history"] == [] and state["jevs_turn"]
+    assert state["history"] == [] and state["jevs_turn"] and state["usage"]["calls"] == 0
 
 
 def test_jev_is_offered_checkmate_as_such(app):
@@ -74,6 +81,16 @@ def test_jev_is_offered_checkmate_as_such(app):
         state = client.post("/api/jev").json()
     assert state["history"] == ["f3", "e5", "g4", "Qh4#"] and state["over"]
     assert state["result"] == "0-1 by checkmate" and state["dests"] == {}
+
+
+def test_game_exports_as_pgn(app):
+    client = app(jev_stub(lambda criteria: "e5")[0])
+    client.post("/api/move", json={"from": "e2", "to": "e4"})
+    game_id = client.post("/api/jev").json()["game_id"]
+    response = client.get("/api/pgn")
+    assert response.headers["content-disposition"] == f'attachment; filename="jev-chess-{game_id}.pgn"'
+    assert '[White "Human"]' in response.text and '[Black "Jev (jev-test)"]' in response.text
+    assert '[Result "*"]' in response.text and "1. e4 e5 *" in response.text
 
 
 def test_upstream_error_is_reported(app):
