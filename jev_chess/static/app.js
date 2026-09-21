@@ -308,6 +308,31 @@ $('export-pgn').addEventListener('click', async () => {
   }
 });
 
+async function copyText(text, source) {
+  if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+  const range = document.createRange();
+  range.selectNodeContents(source);
+  const selection = getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+  if (!document.execCommand('copy')) throw new Error('copy is not available');
+}
+
+$('pgn-copy').addEventListener('click', async () => {
+  const button = $('pgn-copy');
+  try {
+    await copyText($('pgn-text').textContent, $('pgn-text'));
+    button.classList.add('done');
+    $('pgn-copied').textContent = 'PGN copied to clipboard';
+    setTimeout(() => {
+      button.classList.remove('done');
+      $('pgn-copied').textContent = '';
+    }, 2000);
+  } catch (error) {
+    $('pgn-copied').textContent = `Could not copy: ${error.message}`;
+  }
+});
+
 const dialog = $('side-dialog');
 
 function openSideDialog({ cancellable }) {

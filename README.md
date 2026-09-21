@@ -15,7 +15,7 @@ Jev does not generate text. It answers typed questions about a state with calibr
 - **Cost and latency, live.** The footer adds up Jev calls, tokens, average latency and dollars for the current game, straight from OpenRouter's usage data. Jev playing both sides costs about $0.00005 per move at 300 to 400 ms each: a 20-move game for $0.0009.
 - **Engine analysis in your browser.** Stockfish 19 (WebAssembly, 1.8 MB) evaluates the game locally: evaluation chart, average centipawn loss, inaccuracies, mistakes and blunders per player. No server cost, no extra API calls. Depth is configurable.
 - **Is Jev better than chance?** For every position, Stockfish scores all legal moves and ranks the one that was played. A random mover sits on the 50th percentile by definition, so anything above that is signal. Two breakdowns sit next to what a random mover would score. By distance: the share of moves within 10, 25, 50, 100 and 200 centipawns of the best one, the absolute reference. By percentile range: top move, top 3 moves, top 2%, 5%, 10%, 20%, 30% and 50%, each with its average and its worst loss, because a top range can still hold a terrible move when a position has only one good one.
-- **PGN export**: a dialog shows the game in Portable Game Notation, with a button to download it as a file.
+- **PGN export**: a dialog shows the game in Portable Game Notation, ready to copy to the clipboard or download as a file.
 - **One game per browser session**, so several people can play on the same server.
 
 ![Analysis of a Jev-versus-Jev game](screenshots/analysis.png)
