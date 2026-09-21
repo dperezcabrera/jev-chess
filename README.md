@@ -13,7 +13,7 @@ Jev does not generate text. It answers typed questions about a state with calibr
 - **A real board.** [chessground](https://github.com/lichess-org/chessground), the open source board from lichess: drag or click, legal moves only.
 - **Jev's confidence, every move.** The side panel shows the three options Jev weighed and the probability it gave each one.
 - **Cost and latency, live.** The footer adds up Jev calls, tokens, average latency and dollars for the current game, straight from OpenRouter's usage data. Jev playing both sides costs about $0.00005 per move at 300 to 400 ms each: a 20-move game for $0.0009.
-- **Engine analysis in your browser.** Stockfish 19 (WebAssembly, 1.8 MB) evaluates the game locally: evaluation chart, average centipawn loss, inaccuracies, mistakes and blunders per player. No server cost, no extra API calls. Depth is configurable.
+- **Engine analysis in your browser.** Stockfish 19 (WebAssembly, 1.8 MB) evaluates the game locally: evaluation chart, average centipawn loss (how many hundredths of a pawn each move gives away, see [Reading the numbers](#reading-the-numbers)), inaccuracies, mistakes and blunders per player. No server cost, no extra API calls. Depth is configurable.
 - **Is Jev better than chance?** For every position, Stockfish scores all legal moves and ranks the one that was played. A random mover sits on the 50th percentile by definition, so anything above that is signal. Two breakdowns sit next to what a random mover would score. By distance: the share of moves within 10, 25, 50, 100 and 200 centipawns of the best one, the absolute reference. By percentile range: top move, top 3 moves, top 2%, 5%, 10%, 20%, 30% and 50%, each with its average and its worst loss, because a top range can still hold a terrible move when a position has only one good one.
 - **PGN export**: a dialog shows the game in Portable Game Notation, ready to copy to the clipboard or download as a file.
 - **One game per browser session**, so several people can play on the same server.
@@ -157,9 +157,19 @@ Rules, legality, game-over detection and PGN come from [python-chess](https://py
 
 Illegal or out-of-turn moves return `409`, malformed bodies `422`, and Jev or OpenRouter failures `502` with an `error` message.
 
-### How moves are judged
+### Reading the numbers
 
-Evaluations are capped at 1000 centipawns. A move is an inaccuracy, mistake or blunder when it drops the mover's winning chances by 10, 20 or 30 points, using the same centipawn-to-winning-chances curve as lichess. The percentile of a move is the share of legal moves in that position that Stockfish scores strictly worse, with ties split evenly. The metric is calibrated: in a long random-versus-random game both sides land on the 50th and 51st percentile.
+**What a centipawn is.** Engines measure who is ahead in pawns. A centipawn (cp) is a hundredth of one, so 100 cp is one pawn. As a scale: a knight or bishop is worth about 300 cp, a rook about 500 and a queen about 900. An evaluation of +150 means White is a pawn and a half ahead; -300 means Black is a piece up.
+
+**What centipawn loss is.** For one move, it is how much worse the move played is than the best move available, seen from the side that moved. Playing the engine's first choice loses 0 cp; leaving a knight to be captured for nothing loses about 300. Averaged over a player's moves it becomes the average centipawn loss, the usual one-number summary of how accurately someone played. Lower is better.
+
+**What the numbers look like here.** Measured with this app: across a handful of games a random mover loses between 130 and 500 cp per move, Jev between 60 and 190, and a careful human game came out at 16. These depend on the engine and the depth, so compare numbers produced with the same settings and treat them as relative, not as a rating.
+
+**Two loss figures, on purpose.** The summary table's *Avg. centipawn loss* compares the evaluation of the game before and after each move, searched at the game depth (12 on Standard). The *Avg. loss per move* in the comparison with a random mover compares the move played with the best of all legal moves, which needs every move scored and therefore runs at a lower depth (8 on Standard). They measure the same idea and usually land close, but they are different searches and will not match exactly.
+
+**Why centipawns are not enough.** Dropping 300 cp in an equal position loses the game; dropping 300 cp when you are already a queen up changes nothing. So moves are not labelled by centipawns: a move is an inaccuracy, mistake or blunder when it lowers the mover's winning chances by 10, 20 or 30 points, using the same centipawn-to-winning-chances curve as lichess. Evaluations are capped at 1000 cp so that one forced mate does not swamp an average, which also means a single move can lose at most 2000 cp.
+
+**Why the percentile is there.** Centipawn loss says how far a move is from perfect, not whether it beats guessing. The percentile answers that: it is the share of legal moves in the position that Stockfish scores strictly worse than the one played, with ties split evenly. A random mover sits on the 50th percentile by definition. The two are read together, because each hides something: a high percentile can still be a large loss when only one move in the position was good, and a small loss can be a low percentile when every move was fine. The metric is calibrated: in a long random-versus-random game both sides land on the 50th and 51st percentile.
 
 ## Development
 
