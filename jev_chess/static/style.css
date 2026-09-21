@@ -335,6 +335,7 @@ html:has(dialog[open]) { overflow: hidden; scrollbar-gutter: stable; }
 }
 .icon-button:hover { background: color-mix(in srgb, var(--border) 50%, transparent); }
 .icon-button-outline { box-shadow: inset 0 0 0 1px var(--border); }
+.icon-button-primary, .icon-button-primary:hover { background: var(--accent); color: var(--accent-text); }
 .icon-button .icon-done { display: none; color: var(--accent); }
 .icon-button.done .icon-done { display: block; }
 .icon-button.done .icon-copy { display: none; }
