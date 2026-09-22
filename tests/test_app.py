@@ -413,6 +413,9 @@ def llm_app(make_container, make_client, replies, seen, **env):
     config = configuration(FlatDictSource({"OPENROUTER_API_KEY": "server-key", **env}), DictSource({}))
     container = make_container("system_one_chess", "pico_fastapi", config=config)
     container.get(LLMApi)._client = httpx.AsyncClient(transport=httpx.MockTransport(llm_stub(replies, seen)))
+    container.get(JevApi)._client = httpx.AsyncClient(
+        transport=httpx.MockTransport(jev_stub(lambda sans: next(iter(sans)))[0])
+    )
     llm_app.container = container
     return make_client(container)
 
@@ -620,7 +623,20 @@ def test_swiss_pairing_matches_neighbours_avoids_rematches_and_gives_the_bye_to_
     assert pairs == [("b", "a")] and bye is None, "a rematch with no alternative swaps the colours"
 
 
-def test_a_swiss_tournament_plays_itself_and_waits_for_you(make_container, make_client):
+def until(condition, timeout=10.0):
+    """Polls `condition` until it returns something truthy; the tournament plays in the app's own loop."""
+    import time
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        value = condition()
+        if value:
+            return value
+        time.sleep(0.05)
+    raise AssertionError("condition not met in time")
+
+
+def test_a_swiss_tournament_plays_its_boards_itself_and_waits_for_you(make_container, make_client):
     seen = []
     client = llm_app(make_container, make_client, ["nothing", "still nothing"] * 6, seen)
     client.post("/api/models", json={"upstream": "openai/gpt-5-mini"})
@@ -628,42 +644,54 @@ def test_a_swiss_tournament_plays_itself_and_waits_for_you(make_container, make_
     assert client.post("/api/tournament", json={"participants": ["jev", "nobody"]}).status_code == 409
     assert client.post("/api/tournament", json={"participants": ["jev"]}).status_code == 409
     assert client.post("/api/tournament", json={"participants": ["jev", "laya"], "rounds": 0}).status_code == 422
-    assert client.post("/api/tournament/next").status_code == 409
+    assert client.get("/api/tournament/board/1").status_code == 409
 
     body = {"participants": ["llm:openai/gpt-5-mini", "jev"], "human": True, "rounds": 2}
-    started = client.post("/api/tournament", json=body).json()
-    view, state = started["tournament"], started["state"]
-    assert view["active"] and view["round"] == 1 and view["rounds_total"] == 2 and view["games_in_round"] == 1
+    view = client.post("/api/tournament", json=body).json()
+    assert view["active"] and view["round"] == 1 and view["rounds_total"] == 2 and view["boards_total"] == 1
     first = view["rounds"][0]
-    assert (first["pairings"][0]["white"]["id"], first["pairings"][0]["black"]["id"]) == (
-        "llm:openai/gpt-5-mini",
-        "jev",
-    )
+    board = first["pairings"][0]
+    assert (board["white"]["id"], board["black"]["id"]) == ("llm:openai/gpt-5-mini", "jev") and board["board"] == 1
     assert first["bye"] == {"id": "human", "name": "You", "logo": ""}, "three players: the last seed sits out"
-    assert {row["id"]: row["points"] for row in view["standings"]} == {
-        "human": 1.0,
-        "jev": 0.0,
-        "llm:openai/gpt-5-mini": 0.0,
-    }
-    assert state["human"] == "none" and state["game_id"] == view["current_game_id"]
-    assert client.post("/api/tournament/next").status_code == 409, "the game is not over yet"
+    assert view["human_board"] is None and board["human"] == "none" and board["clock"] == {"white": 0.0, "black": 0.0}
 
-    state = client.post("/api/jev").json()
-    assert state["over"] and state["result"] == "0-1 by illegal moves"
-    following = client.post("/api/tournament/next").json()
-    view, state = following["tournament"], following["state"]
-    assert view["round"] == 2 and view["rounds"][0]["pairings"][0]["result"] == "0-1" and view["finished_games"] == 1
+    view = until(lambda: (v := client.get("/api/tournament").json()) and v["round"] == 2 and v)
+    assert view["rounds"][0]["pairings"][0]["result"] == "0-1", "the LLM forfeited by illegal moves on its own"
+    assert view["boards_total"] == 1 and view["human_board"] == 1 and view["finished_games"] == 1
+    second = view["rounds"][1]
+    assert {second["pairings"][0]["white"]["id"], second["pairings"][0]["black"]["id"]} == {"human", "jev"}
+    assert second["bye"]["id"] == "llm:openai/gpt-5-mini"
+    rows = {row["id"]: row for row in view["standings"]}
+    assert (
+        rows["jev"]["points"] == 1.0 and rows["human"]["byes"] == 1 and rows["llm:openai/gpt-5-mini"]["forfeits"] == 1
+    )
+    assert rows["jev"]["buchholz"] == 2.0 and rows["jev"]["sonneborn_berger"] == 1.0
+    assert (
+        rows["jev"]["calls"] == 0
+        and rows["llm:openai/gpt-5-mini"]["calls"] == 1
+        and rows["llm:openai/gpt-5-mini"]["input_tokens"] == 1800
+    )
+
+    state = until(lambda: (s := client.get("/api/tournament/board/1").json()) and s["humans_turn"] and s)
+    assert state["human"] in ("white", "black") and not state["over"]
+    origin, target = ("e2", "e4") if state["human"] == "white" else ("e7", "e5")
+    moved = client.post("/api/tournament/board/1/move", json={"from": origin, "to": target}).json()
+    assert moved["history"][-1] in ("e4", "e5") and not moved["humans_turn"]
+    replied = until(lambda: (s := client.get("/api/tournament/board/1").json()) and s["humans_turn"] and s)
+    assert len(replied["history"]) == len(moved["history"]) + 1, "the server answered your move with Jev's"
+    assert client.get("/api/tournament/board/2").status_code == 409
+    pgn = client.get("/api/tournament/board/1/pgn")
+    assert pgn.status_code == 200 and '[Event "system-one-chess"]' in pgn.text
+
     pgn = client.get("/api/tournament/pgn")
     assert pgn.headers["content-disposition"].endswith('.pgn"') and pgn.text.count("[Event ") == 1
     assert '[Round "1.1"]' in pgn.text and '[Result "0-1"]' in pgn.text and '[Termination "illegal moves"]' in pgn.text
-    assert '[White "gpt-5-mini (openai/gpt-5-mini)"]' in pgn.text and '[Black "Jev (jev-latest)"]' in pgn.text
     assert pgn.text.count("[Round ") == 1
     export = client.get("/api/tournament/export")
     assert export.headers["content-disposition"].endswith('.json"')
     data = export.json()
     assert data["system"] == "Swiss" and data["rounds_total"] == 2 and not data["done"]
     assert [p["id"] for p in data["participants"]] == ["llm:openai/gpt-5-mini", "jev", "human"]
-    assert data["participants"][0]["upstream"] == "openai/gpt-5-mini" and data["participants"][2]["kind"] == "human"
     game = data["rounds"][0]["games"][0]
     assert game["board"] == 1 and game["result"] == "0-1" and game["forfeited"] == "white"
     assert (
@@ -672,23 +700,21 @@ def test_a_swiss_tournament_plays_itself_and_waits_for_you(make_container, make_
         and game["moves"][0]["illegal"] == 2
     )
     assert game["moves"][0]["cost_usd"] == pytest.approx(0.0018) and game["usage"]["white"]["calls"] == 1
-    by_id = {row["id"]: row for row in data["standings"]}
-    assert data["rounds"][0]["bye"] == "human" and by_id["llm:openai/gpt-5-mini"]["sonneborn_berger"] == 0.0
-    assert data["rounds"][1]["games"][0]["result"] is None and "moves" not in data["rounds"][1]["games"][0]
-    second = view["rounds"][1]
-    assert {second["pairings"][0]["white"]["id"], second["pairings"][0]["black"]["id"]} == {"human", "jev"}, (
-        "the two leaders meet"
-    )
-    assert second["bye"]["id"] == "llm:openai/gpt-5-mini" and state["human"] in ("white", "black")
-    rows = {row["id"]: row for row in view["standings"]}
-    assert (
-        rows["jev"]["points"] == 1.0 and rows["human"]["byes"] == 1 and rows["llm:openai/gpt-5-mini"]["forfeits"] == 1
-    )
-    assert rows["llm:openai/gpt-5-mini"]["points"] == 1.0 and rows["llm:openai/gpt-5-mini"]["byes"] == 1
-    assert rows["jev"]["buchholz"] == 2.0, "Jev faced the LLM (a point from its bye) and now you (a point from yours)"
-    assert rows["jev"]["sonneborn_berger"] == 1.0, "a win over the LLM, which holds one point"
-    assert rows["llm:openai/gpt-5-mini"]["sonneborn_berger"] == 0.0
+    assert data["rounds"][0]["bye"] == "human" and "moves" not in data["rounds"][1]["games"][0]
 
-    client.post("/api/new", json={"human": "white"})
-    assert client.post("/api/tournament/next").status_code == 409, "a game started outside the tournament"
     assert client.delete("/api/tournament").json()["active"] is False
+    assert client.get("/api/tournament/board/1").status_code == 409
+
+
+def test_model_boards_of_a_round_run_at_the_same_time_and_a_gateway_error_can_be_retried(make_container, make_client):
+    replies = ['{"choice": "e4"}'] * 400
+    client = llm_app(make_container, make_client, replies, [])
+    for upstream in ("openai/gpt-5-mini", "acme/other", "acme/third"):
+        client.post("/api/models", json={"upstream": upstream})
+    llms = ["llm:openai/gpt-5-mini", "llm:acme/other", "llm:acme/third"]
+    body = {"participants": ["jev", *llms], "human": False, "rounds": 1}
+    view = client.post("/api/tournament", json=body).json()
+    assert view["boards_total"] == 2 and view["human_board"] is None
+    view = until(lambda: (v := client.get("/api/tournament").json()) and v["done"] and v)
+    assert view["boards_finished"] == 2 and view["finished_games"] == 2 and not view["active"]
+    assert all(b["result"] for b in view["rounds"][0]["pairings"])

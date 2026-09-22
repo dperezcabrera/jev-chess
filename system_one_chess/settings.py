@@ -40,6 +40,12 @@ class IllegalMovesSettings:
     limit: int = 2
 
 
+@configured(prefix="TOURNAMENT_", mapping="flat")
+@dataclass
+class TournamentSettings:
+    concurrency: int = 3
+
+
 @configured(prefix="MODELS_", mapping="flat")
 @dataclass
 class ModelsSettings:

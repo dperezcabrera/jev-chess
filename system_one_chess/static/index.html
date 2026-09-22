@@ -57,6 +57,7 @@
         <svg viewBox="0 0 24 24" width="1.25em" height="1.25em" fill="currentColor" aria-hidden="true"><path d="M12 4V1L8 5l4 4V6a6 6 0 0 1 6 6h2a8 8 0 0 0-8-8zm0 14a6 6 0 0 1-6-6H4a8 8 0 0 0 8 8v3l4-4-4-4v3z"/></svg>
       </button>
     </div>
+    <div id="boards" class="boards-grid" role="group" aria-label="Boards of this round" hidden></div>
     </div>
   </section>
 
@@ -95,6 +96,8 @@
     <section class="ranking-section tournament-section" id="tournament-section" aria-labelledby="tournament-title" hidden>
       <h2 id="tournament-title">Tournament</h2>
       <p id="tournament-status" class="tournament-status">No tournament yet</p>
+      <progress id="tournament-progress" class="tournament-progress" value="0" max="1" aria-label="Tournament progress"></progress>
+      <ol id="tournament-top" class="top-list" aria-label="Standings"></ol>
       <div class="tournament-actions">
         <button id="open-standings" class="button button-ghost button-small" type="button">
           <svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true"><path d="M3 13h4v8H3zm7-9h4v17h-4zm7 5h4v12h-4z"/></svg>
@@ -113,7 +116,6 @@
           Data
         </a>
       </div>
-      <ol id="tournament-pairings" class="pairings" aria-label="Pairings of the current round"></ol>
       <p class="side-manage"><button id="tournament-stop" class="link-button" type="button" hidden>Stop the tournament</button></p>
     </section>
 

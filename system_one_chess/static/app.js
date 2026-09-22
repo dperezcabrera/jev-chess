@@ -7,6 +7,10 @@ const DECISION_ROWS = 3;
 
 let generation = 0;
 let currentHuman = 'white';
+let selectedBoard = null;
+const stateUrl = () => (selectedBoard ? `/api/tournament/board/${selectedBoard}` : '/api/state');
+const moveUrl = () => (selectedBoard ? `/api/tournament/board/${selectedBoard}/move` : '/api/move');
+const pgnUrl = () => (selectedBoard ? `api/tournament/board/${selectedBoard}/pgn` : 'api/pgn');
 let current = null;
 let analysis = { gameId: null, done: '', glyphs: [], abort: null };
 
@@ -83,6 +87,26 @@ function orientationOf(state) {
   return flipped ? (natural === 'white' ? 'black' : 'white') : natural;
 }
 
+let thinkingSince = null;
+
+function clockSeconds(state, colour) {
+  const used = state.usage_by_colour ? state.usage_by_colour[colour].seconds : 0;
+  const live = !state.over && state.turn === colour && state.human !== colour && thinkingSince ? (Date.now() - thinkingSince) / 1000 : 0;
+  return used + live;
+}
+
+const clockText = (state, colour) => {
+  const total = Math.round(clockSeconds(state, colour));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+};
+
+function tickClocks() {
+  if (!current) return;
+  for (const clock of document.querySelectorAll('.player-clock')) clock.textContent = clockText(current, clock.dataset.colour);
+}
+
+setInterval(tickClocks, 1000);
+
 function renderPlayers(state) {
   const bottom = orientationOf(state);
   const top = bottom === 'white' ? 'black' : 'white';
@@ -94,7 +118,10 @@ function renderPlayers(state) {
     const swatch = Object.assign(document.createElement('span'), { className: `player-colour ${colour}` });
     swatch.setAttribute('aria-hidden', 'true');
     const note = Object.assign(document.createElement('span'), { className: 'player-note', textContent: state.over ? (state.result || '').split(' ')[0] : toMove ? 'to move' : colour });
-    bar.replaceChildren(swatch, logoNode(player), Object.assign(document.createElement('span'), { className: 'player-name', textContent: player.name, title: player.id }), note);
+    const clock = Object.assign(document.createElement('span'), { className: 'player-clock', textContent: clockText(state, colour) });
+    clock.dataset.colour = colour;
+    clock.title = 'Time spent deciding in this game';
+    bar.replaceChildren(swatch, logoNode(player), Object.assign(document.createElement('span'), { className: 'player-name', textContent: player.name, title: player.id }), clock, note);
   }
 }
 
@@ -126,8 +153,8 @@ function render(state) {
   renderMoves(state.history);
   if (state.over) setStatus(`Game over: ${state.result}`);
   else if (state.humans_turn) setStatus(`Your move (${state.turn})`);
+  else if (PAGE === 'tournament') setStatus(`${playerOf(state, state.turn).name} is deciding`, { thinking: true });
   else askJev();
-  maybeContinueTournament(state);
 }
 
 function usageCells(row, usage) {
@@ -275,8 +302,10 @@ async function askJev() {
   const turn = generation;
   const mover = current ? playerOf(current, current.turn).name : 'The model';
   setStatus(`${mover} is deciding`, { thinking: true });
+  thinkingSince = Date.now();
   try {
     const state = await api('/api/jev', {});
+    thinkingSince = null;
     if (turn === generation) render(state);
   } catch (error) {
     if (turn === generation) setStatus(error.message, { error: true, retry: true });
@@ -325,14 +354,14 @@ async function onHumanMove(from, to) {
   if (moved && moved.role === 'pawn' && (to[1] === '8' || to[1] === '1')) {
     promotion = await askPromotion(to, moved.color);
     if (current !== generation) return;
-    if (promotion === null) return render(await api('/api/state'));
+    if (promotion === null) return render(await api(stateUrl()));
   }
   try {
-    const state = await api('/api/move', { from, to, promotion });
+    const state = await api(moveUrl(), { from, to, promotion });
     if (current === generation) render(state);
   } catch (error) {
     if (current !== generation) return;
-    render(await api('/api/state'));
+    render(await api(stateUrl()));
     setStatus(error.message, { error: true });
   }
 }
@@ -340,7 +369,7 @@ async function onHumanMove(from, to) {
 async function refresh() {
   const current = ++generation;
   try {
-    const state = await api('/api/state');
+    const state = await api(stateUrl());
     if (current === generation) render(state);
     return state;
   } catch (error) {
@@ -365,7 +394,8 @@ $('export-pgn').addEventListener('click', async () => {
   text.classList.remove('error');
   $('pgn-dialog').showModal();
   try {
-    const response = await fetch('api/pgn');
+    const response = await fetch(pgnUrl());
+    $('pgn-download').href = pgnUrl();
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     text.textContent = await response.text();
   } catch (error) {
@@ -528,7 +558,6 @@ function renderStandings(rows) {
 
 const PAGE = /\/tournament\/?$/.test(location.pathname) ? 'tournament' : 'play';
 let tournament = null;
-let tournamentNextKey = null;
 
 function playerNode(player, extraClass = '') {
   const head = Object.assign(document.createElement('span'), { className: `model-head ${extraClass}`.trim() });
@@ -609,28 +638,22 @@ function renderTournament(view) {
   if (!view.rounds.length) status.textContent = 'No tournament yet';
   else if (view.done) {
     const leader = view.standings[0];
-    status.replaceChildren(Object.assign(document.createElement('strong'), { textContent: 'Finished' }), ` after ${view.rounds_total} round${view.rounds_total === 1 ? '' : 's'}: ${leader.name} wins with ${leader.points % 1 ? leader.points.toFixed(1) : leader.points} points`);
+    status.replaceChildren(Object.assign(document.createElement('strong'), { textContent: 'Finished' }), ` after ${view.rounds_total} round${view.rounds_total === 1 ? '' : 's'} in ${compactTime(view.elapsed)}: ${leader.name} wins with ${leader.points % 1 ? leader.points.toFixed(1) : leader.points} points`);
   } else {
-    const round = view.rounds[view.round - 1];
-    const pairing = round.pairings[view.game - 1];
-    status.replaceChildren(Object.assign(document.createElement('strong'), { textContent: `Round ${view.round} of ${view.rounds_total}` }), ` \u00b7 board ${view.game} of ${view.games_in_round}: ${pairing.white.name} vs ${pairing.black.name}`);
+    status.replaceChildren(Object.assign(document.createElement('strong'), { textContent: `Round ${view.round} of ${view.rounds_total}` }), ` \u00b7 ${view.boards_finished} of ${view.boards_total} board${view.boards_total === 1 ? '' : 's'} finished \u00b7 ${compactTime(view.elapsed)}`);
   }
-  const list = $('tournament-pairings');
-  list.replaceChildren();
-  const round = view.rounds[view.rounds.length - 1];
-  if (round) {
-    round.pairings.forEach((pairing, index) => {
-      const li = document.createElement('li');
-      if (view.active && index === view.game - 1) li.classList.add('current');
-      li.append(playerNode(pairing.white, 'pair-white'), Object.assign(document.createElement('span'), { className: 'pair-vs', textContent: 'vs' }), playerNode(pairing.black), Object.assign(document.createElement('span'), { className: 'pair-result', textContent: pairing.result || '\u2013' }));
-      list.append(li);
-    });
-    if (round.bye) {
-      const li = document.createElement('li');
-      li.append(Object.assign(document.createElement('span'), { className: 'pair-bye', textContent: `${round.bye.name} sits this round out and scores a bye` }));
-      list.append(li);
-    }
+  const progress = $('tournament-progress');
+  const total = view.rounds_total * Math.max(1, view.boards_total);
+  progress.value = view.rounds.length ? (view.round - 1) * Math.max(1, view.boards_total) + view.boards_finished : 0;
+  progress.max = total || 1;
+  const top = $('tournament-top');
+  top.replaceChildren();
+  for (const row of view.standings) {
+    const li = document.createElement('li');
+    li.append(Object.assign(document.createElement('span'), { className: 'top-rank', textContent: row.rank }), playerNode(row), Object.assign(document.createElement('span'), { className: 'top-points', textContent: row.points % 1 ? row.points.toFixed(1) : row.points }));
+    top.append(li);
   }
+  renderBoards(view);
   renderStandingsDialog(view);
   renderRoundsDialog(view);
 }
@@ -649,21 +672,90 @@ async function loadTournament() {
   return tournament;
 }
 
-function maybeContinueTournament(state) {
-  if (PAGE !== 'tournament' || !tournament || !tournament.active || !state.over) return;
-  if (state.game_id !== tournament.current_game_id || tournamentNextKey === state.game_id) return;
-  tournamentNextKey = state.game_id;
-  const current = generation;
-  setTimeout(async () => {
-    if (current !== generation) return;
-    try {
-      const data = await api('/api/tournament/next', {});
-      renderTournament(data.tournament);
-      if (current === generation) render(data.state);
-    } catch (error) {
-      setStatus(error.message, { error: true, retry: true });
+const minis = new Map();
+let pollTimer = null;
+
+function miniNode(board, view) {
+  let mini = minis.get(board.board);
+  if (!mini) {
+    const root = Object.assign(document.createElement('button'), { className: 'mini', type: 'button' });
+    const boardEl = Object.assign(document.createElement('div'), { className: 'mini-board' });
+    const top = Object.assign(document.createElement('div'), { className: 'mini-row' });
+    const bottom = Object.assign(document.createElement('div'), { className: 'mini-row' });
+    const status = Object.assign(document.createElement('span'), { className: 'mini-status' });
+    root.append(top, boardEl, bottom, status);
+    const ground = Chessground(boardEl, { fen: board.fen, viewOnly: true, coordinates: false, animation: { enabled: false }, drawable: { enabled: false } });
+    mini = { root, ground, top, bottom, status };
+    root.addEventListener('click', () => selectBoard(board.board));
+    minis.set(board.board, mini);
+  }
+  const orientation = board.human === 'black' ? 'black' : 'white';
+  mini.ground.set({ fen: board.fen, lastMove: board.last_move || undefined, orientation, check: board.check });
+  const topColour = orientation === 'white' ? 'black' : 'white';
+  const row = (colour, el) => {
+    const player = board[colour];
+    const live = board.thinking_since && !board.over && board.turn === colour ? Math.max(0, view.now - board.thinking_since) : 0;
+    const total = Math.round(board.clock[colour] + live);
+    el.replaceChildren(playerNode(player), Object.assign(document.createElement('span'), { className: `mini-clock${!board.over && board.turn === colour ? ' active' : ''}`, textContent: `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}` }));
+  };
+  row(topColour, mini.top);
+  row(orientation, mini.bottom);
+  const text = board.error ? 'stopped, click to retry' : board.over ? board.result : board.humans_turn ? 'your move' : `move ${Math.floor(board.ply / 2) + 1}, ${board[board.turn].name} thinking`;
+  mini.status.textContent = text;
+  mini.status.className = `mini-status${board.error ? ' is-error' : board.humans_turn ? ' is-yours' : board.over ? ' is-over' : ''}`;
+  mini.root.classList.toggle('selected', board.board === selectedBoard);
+  mini.root.setAttribute('aria-pressed', String(board.board === selectedBoard));
+  mini.root.setAttribute('aria-label', `Board ${board.board}: ${board.white.name} against ${board.black.name}, ${text}`);
+  return mini.root;
+}
+
+function renderBoards(view) {
+  const grid = $('boards');
+  const round = view.rounds[view.rounds.length - 1];
+  grid.hidden = !round;
+  if (!round) return;
+  const numbers = new Set(round.pairings.map((board) => board.board));
+  for (const [number, mini] of minis) if (!numbers.has(number) || mini.gameId !== round.pairings[number - 1].game_id) { mini.root.remove(); minis.delete(number); }
+  for (const board of round.pairings) {
+    const node = miniNode(board, view);
+    minis.get(board.board).gameId = board.game_id;
+    if (node.parentElement !== grid) grid.append(node);
+  }
+}
+
+async function selectBoard(number) {
+  if (selectedBoard === number) {
+    const board = tournament && tournament.rounds.length ? tournament.rounds[tournament.rounds.length - 1].pairings[number - 1] : null;
+    if (board && board.error) await api(`/api/tournament/board/${number}/retry`, {});
+    return;
+  }
+  selectedBoard = number;
+  await refresh();
+  if (tournament) renderBoards(tournament);
+}
+
+async function pollTournament() {
+  if (PAGE !== 'tournament') return;
+  try {
+    const view = await api('/api/tournament');
+    const previousRound = tournament ? tournament.round : 0;
+    renderTournament(view);
+    if (view.rounds.length) {
+      const boards = view.rounds[view.rounds.length - 1].pairings;
+      if (view.round !== previousRound || !selectedBoard || selectedBoard > boards.length) selectedBoard = view.human_board || 1;
+      const board = boards[selectedBoard - 1];
+      thinkingSince = board.thinking_since ? Date.now() - Math.max(0, view.now - board.thinking_since) * 1000 : null;
+      const state = await api(stateUrl());
+      if (!current || current.game_id !== state.game_id || current.history.length !== state.history.length || current.over !== state.over) render(state);
+      else tickClocks();
     }
-  }, 1800);
+    clearTimeout(pollTimer);
+    if (view.active) pollTimer = setTimeout(pollTournament, 1500);
+  } catch (error) {
+    setStatus(error.message, { error: true });
+    clearTimeout(pollTimer);
+    pollTimer = setTimeout(pollTournament, 4000);
+  }
 }
 
 const tournamentDialog = $('tournament-dialog');
@@ -725,10 +817,12 @@ tournamentForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const current = ++generation;
   try {
-    const data = await api('/api/tournament', tournamentChoice());
+    const view = await api('/api/tournament', tournamentChoice());
     tournamentDialog.close();
-    renderTournament(data.tournament);
-    if (current === generation) render(data.state);
+    selectedBoard = view.human_board || 1;
+    renderTournament(view);
+    clearTimeout(pollTimer);
+    await pollTournament();
   } catch (error) {
     $('tournament-error').textContent = error.message;
   }
@@ -736,6 +830,8 @@ tournamentForm.addEventListener('submit', async (event) => {
 $('tournament-stop').addEventListener('click', async () => {
   try {
     const response = await fetch('api/tournament', { method: 'DELETE' });
+    clearTimeout(pollTimer);
+    selectedBoard = null;
     renderTournament(await response.json());
   } catch (error) {
     setStatus(error.message, { error: true });
@@ -890,8 +986,11 @@ if (PAGE === 'tournament') {
   $('new-game').lastChild.textContent = ' New tournament';
   await loadModels();
   const view = await loadTournament();
-  const initial = await refresh();
-  if (view && !view.active && initial) openTournamentDialog();
+  if (view && view.rounds.length) {
+    selectedBoard = view.human_board || 1;
+    await pollTournament();
+  }
+  if (!view || !view.active) openTournamentDialog();
 } else {
   loadStandings();
   await loadModels();

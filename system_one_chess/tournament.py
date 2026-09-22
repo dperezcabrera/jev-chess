@@ -1,16 +1,21 @@
 """A Swiss tournament for the session: a fixed number of rounds, each pairing players on equal scores.
 
-Games between models play themselves; a game with you waits for your moves. The next game starts when the
-browser asks for it, so a result stays on screen until then. With an odd number of players one gets a bye."""
+Every board of a round is its own game. The server plays the games between models itself, several at a
+time up to `TOURNAMENT_CONCURRENCY`, while a game with you waits for your moves; when every board of a round
+is over the next round is paired. With an odd number of players one gets a bye."""
 
+import asyncio
+import time
 from datetime import UTC, datetime
 
 import chess
 from pico_ioc import component
 
 from .game import Game, IllegalMove
+from .jev import JevError, JevMoveChooser
 from .models import ModelRegistry, SessionModels
 from .provider import SessionCredentials
+from .settings import TournamentSettings
 from .standings import POINTS, Standings
 
 HUMAN = "human"
@@ -41,21 +46,37 @@ def pair_round(
 
 @component(scope="session")
 class Tournament:
-    def __init__(self, game: Game, registry: ModelRegistry, credentials: SessionCredentials, session: SessionModels):
-        self._game = game
+    def __init__(
+        self,
+        chooser: JevMoveChooser,
+        registry: ModelRegistry,
+        credentials: SessionCredentials,
+        session: SessionModels,
+        standings: Standings,
+        settings: TournamentSettings,
+    ):
+        self._chooser = chooser
         self._registry = registry
         self._credentials = credentials
         self._session = session
-        self._standings = Standings(registry)
+        self._session_standings = standings
+        self._concurrency = max(1, settings.concurrency)
+        self._rounds: list[dict] = []
+        self._reset()
+
+    def _reset(self) -> None:
         self._participants: list[str] = []
         self._rounds_total = 0
-        self._rounds: list[dict] = []
-        self._pairing = 0
+        self._rounds = []
         self._played: set[frozenset] = set()
         self._balance: dict[str, int] = {}
         self._byes: set[str] = set()
         self._opponents: dict[str, list[str]] = {}
         self._scores: dict[str, list[tuple[str, float]]] = {}
+        self._standings = Standings(self._registry)
+        self._started_at: float | None = None
+        self._semaphore: asyncio.Semaphore | None = None
+        self._lock: asyncio.Lock | None = None
 
     async def start(self, participants: list[str], human: bool, rounds: int) -> dict:
         ids = list(dict.fromkeys(participants))
@@ -72,61 +93,158 @@ class Tournament:
             raise IllegalMove(f"a tournament needs between 2 and {MAX_PARTICIPANTS} participants")
         if not 1 <= rounds <= MAX_ROUNDS:
             raise IllegalMove(f"a tournament has between 1 and {MAX_ROUNDS} rounds")
+        self.stop()
         self._participants = ids
         self._rounds_total = rounds
-        self._rounds = []
-        self._pairing = 0
-        self._played = set()
         self._balance = dict.fromkeys(ids, 0)
-        self._byes = set()
         self._opponents = {player: [] for player in ids}
         self._scores = {player: [] for player in ids}
-        self._standings = Standings(self._registry)
         for player in ids:
             self._standings.ensure(player)
-        self._new_round()
-        return await self._begin()
+        self._started_at = time.time()
+        self._semaphore = asyncio.Semaphore(self._concurrency)
+        self._lock = asyncio.Lock()
+        await self._new_round()
+        return await self.view()
 
-    async def next(self) -> dict:
-        """Records the game that just ended and starts the following one, pairing a new round when needed."""
-        if not self.active:
+    def stop(self) -> None:
+        for round_ in self._rounds:
+            for entry in round_["pairings"]:
+                if entry["task"] is not None:
+                    entry["task"].cancel()
+        self._reset()
+
+    @property
+    def active(self) -> bool:
+        return bool(self._rounds) and not self.done
+
+    @property
+    def done(self) -> bool:
+        return (
+            bool(self._rounds)
+            and len(self._rounds) >= self._rounds_total
+            and all(entry["result"] is not None for entry in self._rounds[-1]["pairings"])
+        )
+
+    def _board(self, number: int) -> dict:
+        if not self._rounds:
             raise IllegalMove("no tournament is running")
-        entry = self._current()
-        outcome = await self._game.outcome()
-        if outcome["game_id"] != entry["game_id"]:
-            raise IllegalMove("the tournament game was replaced by another game")
-        if not outcome["over"]:
-            raise IllegalMove("the current game is not over")
-        self._standings.record(
-            outcome["game_id"],
-            outcome["players"],
-            outcome["result"],
-            outcome["forfeited"],
-            outcome["illegal"],
-            outcome["usage"],
-        )
-        entry["result"] = outcome["result"]
-        _, pgn = await self._game.pgn()
-        entry["pgn"] = pgn.replace('[Event "system-one-chess"]', '[Event "system-one-chess tournament"]', 1).replace(
-            '[Round "?"]', f'[Round "{len(self._rounds)}.{self._pairing + 1}"]', 1
-        )
-        entry["record"] = {
-            "forfeited": colour_name(outcome["forfeited"]),
-            "illegal": {colour_name(c): n for c, n in outcome["illegal"].items()},
-            "usage": {colour_name(c): dict(u) for c, u in outcome["usage"].items()},
-            "moves": outcome["moves"],
-            "final_fen": outcome["fen"],
-        }
-        white, black = entry["white"], entry["black"]
-        white_points, black_points = POINTS[outcome["result"]]
-        self._scores[white].append((black, white_points))
-        self._scores[black].append((white, black_points))
-        self._pairing += 1
-        if self._pairing >= len(self._rounds[-1]["pairings"]):
-            if len(self._rounds) >= self._rounds_total:
-                return await self._game.snapshot()
-            self._new_round()
-        return await self._begin()
+        boards = self._rounds[-1]["pairings"]
+        if not 1 <= number <= len(boards):
+            raise IllegalMove(f"board {number} is not in this round")
+        return boards[number - 1]
+
+    async def board_state(self, number: int) -> dict:
+        return await self._board(number)["game"].snapshot()
+
+    async def board_pgn(self, number: int) -> tuple[str, str]:
+        return await self._board(number)["game"].pgn()
+
+    async def human_move(self, number: int, origin: str, target: str, promotion: str = "q") -> dict:
+        entry = self._board(number)
+        state = await entry["game"].human_move(origin, target, promotion)
+        entry["event"].set()
+        return state
+
+    async def retry(self, number: int) -> None:
+        """Starts a board again after a gateway error stopped it."""
+        entry = self._board(number)
+        if entry["error"] is None:
+            return
+        entry["error"] = None
+        entry["task"] = asyncio.create_task(self._run_board(entry))
+
+    async def _new_round(self) -> None:
+        order = self._participants if not self._rounds else [row["id"] for row in self._table()]
+        pairs, bye = pair_round(order, self._played, self._balance, self._byes)
+        boards = []
+        for white, black in pairs:
+            self._played.add(frozenset((white, black)))
+            self._balance[white] += 1
+            self._balance[black] -= 1
+            self._opponents[white].append(black)
+            self._opponents[black].append(white)
+            game = Game(self._chooser, self._credentials, self._registry, self._session, self._session_standings)
+            human = "white" if white == HUMAN else "black" if black == HUMAN else "none"
+            state = await game.new(human, white if white != HUMAN else black, black if black != HUMAN else white)
+            boards.append(
+                {
+                    "white": white,
+                    "black": black,
+                    "game": game,
+                    "game_id": state["game_id"],
+                    "result": None,
+                    "pgn": "",
+                    "record": None,
+                    "error": None,
+                    "event": asyncio.Event(),
+                    "thinking_since": None,
+                    "task": None,
+                }
+            )
+        if bye is not None:
+            self._byes.add(bye)
+            self._standings.bye(bye)
+        self._rounds.append({"pairings": boards, "bye": bye})
+        for entry in boards:
+            entry["task"] = asyncio.create_task(self._run_board(entry))
+
+    async def _run_board(self, entry: dict) -> None:
+        """Plays a board to the end: model moves under the concurrency limit, your moves when they come."""
+        game = entry["game"]
+        try:
+            while True:
+                state = await game.snapshot()
+                if state["over"]:
+                    break
+                if state["humans_turn"]:
+                    entry["event"].clear()
+                    await entry["event"].wait()
+                    continue
+                async with self._semaphore:
+                    entry["thinking_since"] = time.time()
+                    try:
+                        await game.jev_move()
+                    finally:
+                        entry["thinking_since"] = None
+        except (JevError, IllegalMove) as error:
+            entry["error"] = str(error)
+            return
+        await self._board_finished(entry)
+
+    async def _board_finished(self, entry: dict) -> None:
+        async with self._lock:
+            if entry["result"] is not None:
+                return
+            outcome = await entry["game"].outcome()
+            round_number = next(i for i, r in enumerate(self._rounds, 1) if entry in r["pairings"])
+            board_number = self._rounds[round_number - 1]["pairings"].index(entry) + 1
+            self._standings.record(
+                outcome["game_id"],
+                outcome["players"],
+                outcome["result"],
+                outcome["forfeited"],
+                outcome["illegal"],
+                outcome["usage"],
+            )
+            entry["result"] = outcome["result"]
+            _, pgn = await entry["game"].pgn()
+            entry["pgn"] = pgn.replace(
+                '[Event "system-one-chess"]', '[Event "system-one-chess tournament"]', 1
+            ).replace('[Round "?"]', f'[Round "{round_number}.{board_number}"]', 1)
+            entry["record"] = {
+                "forfeited": colour_name(outcome["forfeited"]),
+                "illegal": {colour_name(c): n for c, n in outcome["illegal"].items()},
+                "usage": {colour_name(c): dict(u) for c, u in outcome["usage"].items()},
+                "moves": outcome["moves"],
+                "final_fen": outcome["fen"],
+            }
+            white_points, black_points = POINTS[outcome["result"]]
+            self._scores[entry["white"]].append((entry["black"], white_points))
+            self._scores[entry["black"]].append((entry["white"], black_points))
+            current = self._rounds[-1]
+            if all(e["result"] is not None for e in current["pairings"]) and len(self._rounds) < self._rounds_total:
+                await self._new_round()
 
     def export(self) -> dict:
         """Everything recorded about the tournament, for analysis and writing: players, rounds with every game
@@ -163,7 +281,7 @@ class Tournament:
                             "result": entry["result"],
                             "game_id": entry["game_id"],
                             "pgn": entry.get("pgn", ""),
-                            **entry.get("record", {}),
+                            **(entry.get("record") or {}),
                         }
                         for board, entry in enumerate(round_["pairings"], 1)
                     ],
@@ -176,55 +294,6 @@ class Tournament:
     def pgn(self) -> str:
         """Every finished game of the tournament, in the order played, as one PGN file."""
         return "\n".join(entry["pgn"] for round_ in self._rounds for entry in round_["pairings"] if entry.get("pgn"))
-
-    def stop(self) -> None:
-        self._rounds = []
-        self._rounds_total = 0
-        self._participants = []
-
-    @property
-    def active(self) -> bool:
-        return bool(self._rounds) and not self.done
-
-    @property
-    def done(self) -> bool:
-        return (
-            bool(self._rounds)
-            and len(self._rounds) >= self._rounds_total
-            and self._pairing >= len(self._rounds[-1]["pairings"])
-        )
-
-    def _current(self) -> dict:
-        return self._rounds[-1]["pairings"][self._pairing]
-
-    def _new_round(self) -> None:
-        order = self._participants if not self._rounds else [row["id"] for row in self._table()]
-        pairs, bye = pair_round(order, self._played, self._balance, self._byes)
-        for white, black in pairs:
-            self._played.add(frozenset((white, black)))
-            self._balance[white] += 1
-            self._balance[black] -= 1
-            self._opponents[white].append(black)
-            self._opponents[black].append(white)
-        if bye is not None:
-            self._byes.add(bye)
-            self._standings.bye(bye)
-        self._rounds.append(
-            {
-                "pairings": [{"white": w, "black": b, "game_id": None, "result": None, "pgn": ""} for w, b in pairs],
-                "bye": bye,
-            }
-        )
-        self._pairing = 0
-
-    async def _begin(self) -> dict:
-        entry = self._current()
-        human = "white" if entry["white"] == HUMAN else "black" if entry["black"] == HUMAN else "none"
-        white = entry["white"] if entry["white"] != HUMAN else entry["black"]
-        black = entry["black"] if entry["black"] != HUMAN else entry["white"]
-        state = await self._game.new(human, white, black)
-        entry["game_id"] = state["game_id"]
-        return state
 
     def _table(self) -> list[dict]:
         """The standings with the usual tie-breaks: Buchholz (the points of everyone a player has faced),
@@ -250,32 +319,52 @@ class Tournament:
             row["rank"] = rank
         return rows
 
-    def view(self) -> dict:
+    async def view(self) -> dict:
         def player(model_id: str | None) -> dict | None:
             if model_id is None:
                 return None
             return {"id": model_id, "name": self._registry.name_of(model_id), "logo": self._registry.logo_of(model_id)}
 
-        current = self._current() if self.active else None
+        async def board(number: int, entry: dict) -> dict:
+            state = await entry["game"].snapshot()
+            usage = state["usage_by_colour"]
+            return {
+                "board": number,
+                "white": player(entry["white"]),
+                "black": player(entry["black"]),
+                "result": entry["result"],
+                "game_id": entry["game_id"],
+                "fen": state["fen"],
+                "turn": state["turn"],
+                "ply": len(state["moves_uci"]),
+                "last_move": state["last_move"],
+                "check": state["check"],
+                "over": state["over"],
+                "human": state["human"],
+                "humans_turn": state["humans_turn"],
+                "clock": {"white": usage["white"]["seconds"], "black": usage["black"]["seconds"]},
+                "thinking_since": entry["thinking_since"],
+                "error": entry["error"],
+            }
+
+        rounds = []
+        for round_ in self._rounds:
+            boards = [await board(number, entry) for number, entry in enumerate(round_["pairings"], 1)]
+            rounds.append({"pairings": boards, "bye": player(round_["bye"])})
+        current = rounds[-1]["pairings"] if rounds else []
+        human_board = next((b["board"] for b in current if b["human"] != "none"), None)
         return {
             "active": self.active,
             "done": self.done,
             "rounds_total": self._rounds_total,
             "round": len(self._rounds),
-            "game": self._pairing + 1 if self.active else None,
-            "games_in_round": len(self._rounds[-1]["pairings"]) if self._rounds else 0,
-            "current_game_id": current["game_id"] if current else None,
-            "finished_games": sum(1 for round_ in self._rounds for entry in round_["pairings"] if entry.get("pgn")),
-            "rounds": [
-                {
-                    "pairings": [
-                        {"white": player(p["white"]), "black": player(p["black"]), "result": p["result"]}
-                        for p in round_["pairings"]
-                    ],
-                    "bye": player(round_["bye"]),
-                }
-                for round_ in self._rounds
-            ],
+            "boards_total": len(current),
+            "boards_finished": sum(1 for b in current if b["result"] is not None),
+            "human_board": human_board,
+            "elapsed": time.time() - self._started_at if self._started_at else 0.0,
+            "now": time.time(),
+            "finished_games": sum(1 for r in self._rounds for e in r["pairings"] if e["result"] is not None),
+            "rounds": rounds,
             "standings": self._table() if self._rounds else [],
         }
 
