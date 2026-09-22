@@ -23,7 +23,7 @@ from .settings import TournamentSettings
 from .standings import POINTS, Standings
 
 HUMAN = "human"
-MAX_PARTICIPANTS = 10
+MAX_PARTICIPANTS = 16
 MAX_ROUNDS = 20
 
 
