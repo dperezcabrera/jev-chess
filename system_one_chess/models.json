@@ -35,7 +35,10 @@
     },
     {
       "upstream": "x-ai/grok-4.7",
-      "tier": "mid"
+      "tier": "mid",
+      "reasoning": {
+        "effort": "low"
+      }
     },
     {
       "upstream": "deepseek/deepseek-v4.1-flash",
