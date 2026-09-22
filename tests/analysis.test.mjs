@@ -37,16 +37,20 @@ test('percentile ranges widen from the top move down to the top half', () => {
   const forty = new Map(Array.from({ length: 40 }, (_, i) => [`m${i}`, -i * 5]));
   const second = rankAgainstRandom(forty, 'm1');
   const picked = (key) => second.groups[key].picked;
-  assert.deepEqual(['best', 'top3', 'p2', 'p5', 'p10', 'p50'].map(picked), [false, true, false, true, true, true]);
+  assert.deepEqual(['best', 'top3', 'p10', 'p50'].map(picked), [false, true, true, true]);
   assert.equal(second.groups.top3.moves, 3);
-  assert.deepEqual(['best', 'p2', 'p5', 'p10', 'p20', 'p50'].map((key) => second.groups[key].moves), [1, 1, 2, 4, 8, 20]);
+  assert.deepEqual(['best', 'p10', 'p20', 'p50'].map((key) => second.groups[key].moves), [1, 4, 8, 20]);
+  const twelve = new Map(Array.from({ length: 12 }, (_, i) => [`m${i}`, -i * 5]));
+  const third = rankAgainstRandom(twelve, 'm2');
+  assert.deepEqual(['top3', 'p10', 'p20'].map((key) => third.groups[key].picked), [true, true, true], 'a range is never smaller than the top 3');
+  assert.deepEqual(['p10', 'p20', 'p50'].map((key) => third.groups[key].moves), [3, 3, 6]);
 
   const summary = summarizeRanks([rankAgainstRandom(forty, 'm0'), second, rankAgainstRandom(forty, 'm20')]);
   const byKey = Object.fromEntries(summary.percentileRanges.map((group) => [group.key, group]));
   assert.ok(Math.abs(summary.percentile - (100 + 100 * (38 / 39) + 100 * (19 / 39)) / 3) < 1e-9);
   assert.equal(byKey.best.picks, 1);
-  assert.equal(byKey.p5.picks, 2);
-  assert.equal(Math.round(byKey.p5.share), 67);
+  assert.equal(byKey.p10.picks, 2);
+  assert.equal(Math.round(byKey.p10.share), 67);
   assert.ok(Math.abs(byKey.best.randomShare - 2.5) < 1e-9);
   assert.ok(Math.abs(byKey.p10.randomShare - 10) < 1e-9);
   assert.equal(byKey.p10.worstLoss, 15);
@@ -59,7 +63,7 @@ test('a top range exposes the terrible second-best move through its worst loss',
   const summary = summarizeRanks([rankAgainstRandom(onlyOneGood, 'bad')]);
   const top50 = summary.percentileRanges.find((group) => group.key === 'p50');
   assert.equal(top50.picks, 1);
-  assert.equal(top50.worstLoss, 900);
+  assert.equal(top50.worstLoss, 950, 'top 50% of four moves is the top three, so the third one sets the worst loss');
   const distance = Object.fromEntries(summary.distanceBands.map((group) => [group.key, group]));
   assert.equal(distance.cp200.picks, 0);
   assert.equal(distance.far.picks, 1);

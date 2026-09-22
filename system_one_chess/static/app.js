@@ -396,7 +396,7 @@ function renderVersusRandom(result) {
   const versusRandomCells = (name, index) => colors.flatMap((color) => [share(versus[color][name][index]), `${Math.round(versus[color][name][index].randomShare)}%`]);
   fillRows($('percentile-rows'), versus.all.percentileRanges.map((group, index) => [group.label, cp(group.averageLoss), cp(group.worstLoss), ...versusRandomCells('percentileRanges', index)]));
   fillRows($('distance-rows'), versus.all.distanceBands.map((group, index) => [group.label, ...versusRandomCells('distanceBands', index)]));
-  const insideBest = ['best', 'top3', 'p5'].map((key) => versus.all.percentileRanges.findIndex((group) => group.key === key));
+  const insideBest = ['best', 'top3'].map((key) => versus.all.percentileRanges.findIndex((group) => group.key === key));
   fillRows($('decile-rows'), [
     ...insideBest.map((index) => [`Best 10% \u203a ${versus.all.percentileRanges[index].label.toLowerCase()}`, cp(versus.all.percentileRanges[index].averageLoss), ...versusRandomCells('percentileRanges', index)]),
     ...versus.all.deciles.map((decile, index) => [decileLabel(decile.decile), cp(decile.averageLoss), ...versusRandomCells('deciles', index)]),

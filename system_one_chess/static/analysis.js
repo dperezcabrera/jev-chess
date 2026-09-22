@@ -6,13 +6,13 @@ export const DEPTHS = {
   deep: { label: 'Deep', game: 16, everyMove: 11 },
   deepest: { label: 'Deepest', game: 20, everyMove: 14 },
 };
-const percentileRange = (share) => ({ key: `p${share}`, label: `Top ${share}%`, holds: (move) => move.percentile >= 100 - share });
+const percentileRange = (share) => ({ key: `p${share}`, label: `Top ${share}%`, holds: (move) => move.better < Math.max(3, Math.ceil((share * move.count) / 100)) });
 const withinLoss = (limit) => ({ key: `cp${limit}`, label: `Within ${limit} cp of the best`, holds: (move) => move.loss <= limit });
 const GROUPS = {
   percentileRanges: [
     { key: 'best', label: 'Top move', holds: (move) => move.better === 0 },
     { key: 'top3', label: 'Top 3 moves', holds: (move) => move.better < 3 },
-    ...[2, 5, 10, 20, 30, 50].map(percentileRange),
+    ...[10, 20, 30, 50].map(percentileRange),
   ],
   distanceBands: [...[10, 25, 50, 100, 200].map(withinLoss), { key: 'far', label: 'More than 200 cp behind', holds: (move) => move.loss > 200 }],
 };
@@ -69,7 +69,7 @@ export function rankAgainstRandom(scoresByMove, chosen) {
   const best = Math.max(...values);
   const describe = (value) => {
     const percentile = percentileOf(values, value);
-    return { loss: best - value, percentile, decile: decileOf(percentile), better: values.filter((other) => other > value).length };
+    return { loss: best - value, percentile, decile: decileOf(percentile), better: values.filter((other) => other > value).length, count: values.length };
   };
   const moves = values.map(describe);
   const own = describe(clamp(scoresByMove.get(chosen), CP_CAP));
