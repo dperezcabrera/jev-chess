@@ -1012,3 +1012,41 @@ def test_the_only_legal_move_is_played_without_asking_the_model():
     assert len(list(board.legal_moves)) == 1, "only the king move remains"
     decision = asyncio.run(chooser.choose(board, model="llm:acme/never-called"))
     assert decision.forced and decision.san == "Kxh7" and decision.cost_usd == 0.0 and decision.seconds == 0.0
+
+
+def test_a_tournament_can_be_paused_and_played_on(make_container, make_client):
+    import time
+
+    from system_one_chess.llm import LLMApi
+
+    async def slow(request: httpx.Request) -> httpx.Response:
+        await asyncio_sleep(0.4)
+        body = json.loads(request.content)
+        labels = json.loads(body["messages"][1]["content"].split("Legal labels:\n")[1].split("\n\n")[0])
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": json.dumps({"choice": labels[0]})}}], "usage": {}}
+        )
+
+    import asyncio
+
+    asyncio_sleep = asyncio.sleep
+    client = llm_app(make_container, make_client, [], [])
+    llm_app.container.get(LLMApi)._client = httpx.AsyncClient(transport=httpx.MockTransport(slow))
+    client.post("/api/models", json={"upstream": "openai/gpt-5-mini"})
+    assert client.post("/api/tournament/pause").status_code == 409
+    client.post(
+        "/api/tournament",
+        json={"participants": ["jev", "llm:openai/gpt-5-mini"], "human": False, "rounds": 1, "time_limit": 0},
+    )
+    time.sleep(0.6)
+    view = client.post("/api/tournament/pause").json()
+    assert view["paused"] and view["active"]
+    plies = client.get("/api/tournament/board/1").json()["history"]
+    time.sleep(1.0)
+    board = client.get("/api/tournament").json()["rounds"][0]["pairings"][0]
+    assert client.get("/api/tournament/board/1").json()["history"] == plies, "nothing moves while paused"
+    assert board["error"] is None and board["thinking_since"] is None
+    view = client.post("/api/tournament/play").json()
+    assert not view["paused"]
+    until(lambda: len(client.get("/api/tournament/board/1").json()["history"]) > len(plies), timeout=15)
+    assert client.delete("/api/tournament").json()["active"] is False

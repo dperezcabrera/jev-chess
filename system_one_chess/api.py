@@ -168,6 +168,14 @@ class TournamentController:
         limit = body.time_limit * 60 if body.time_limit else None
         return await self._tournament.start(body.participants, body.human, body.rounds, limit)
 
+    @post("/pause")
+    async def pause(self):
+        return await self._tournament.pause()
+
+    @post("/play")
+    async def play(self):
+        return await self._tournament.play()
+
     @post("/participants")
     async def add_participants(self, body: ParticipantsRequest):
         return await self._tournament.add_participants(body.participants)

@@ -748,6 +748,12 @@ function renderTournament(view) {
   const status = $('tournament-status');
   $('tournament-stop').hidden = !view.active;
   $('tournament-add').hidden = !view.active;
+  const pauseButton = $('tournament-pause');
+  pauseButton.hidden = !view.active;
+  pauseButton.setAttribute('aria-pressed', String(Boolean(view.paused)));
+  pauseButton.querySelector('.icon-pause').hidden = Boolean(view.paused);
+  pauseButton.querySelector('.icon-play').hidden = !view.paused;
+  pauseButton.querySelector('span').textContent = view.paused ? 'Play' : 'Pause';
   $('open-standings').disabled = !view.rounds.length;
   $('open-rounds').disabled = !view.rounds.length;
   for (const [id, what] of [['tournament-pgn', 'as PGN'], ['tournament-export', 'with every statistic, as JSON']]) {
@@ -761,7 +767,7 @@ function renderTournament(view) {
     const leader = view.standings[0];
     status.replaceChildren(Object.assign(document.createElement('strong'), { textContent: 'Finished' }), ` after ${view.rounds_total} round${view.rounds_total === 1 ? '' : 's'} in ${compactTime(view.elapsed)}: ${leader.name} wins with ${leader.points % 1 ? leader.points.toFixed(1) : leader.points} points`);
   } else {
-    status.replaceChildren(Object.assign(document.createElement('strong'), { textContent: `Round ${view.round} of ${view.rounds_total}` }), ` \u00b7 ${view.boards_finished} of ${view.boards_total} board${view.boards_total === 1 ? '' : 's'} finished \u00b7 ${compactTime(view.elapsed)}`);
+    status.replaceChildren(Object.assign(document.createElement('strong'), { textContent: `Round ${view.round} of ${view.rounds_total}${view.paused ? ' \u00b7 paused' : ''}` }), ` \u00b7 ${view.boards_finished} of ${view.boards_total} board${view.boards_total === 1 ? '' : 's'} finished \u00b7 ${compactTime(view.elapsed)}`);
   }
   const progress = $('tournament-progress');
   const total = view.rounds_total * Math.max(1, view.boards_total);
@@ -844,7 +850,7 @@ function miniNode(board, view, roundNumber) {
   };
   row(topColour, mini.top);
   row(orientation, mini.bottom);
-  const text = board.error ? 'stopped, click to retry' : board.over ? (board.forfeited ? `${board.result} by illegal moves, click to let it continue` : board.result) : board.humans_turn ? 'your move' : `move ${Math.floor(board.ply / 2) + 1}, ${board[board.turn].name} thinking`;
+  const text = board.error ? 'stopped, click to retry' : board.over ? (board.forfeited ? `${board.result} by illegal moves, click to let it continue` : board.result) : board.humans_turn ? 'your move' : view.paused ? `move ${Math.floor(board.ply / 2) + 1}, paused` : `move ${Math.floor(board.ply / 2) + 1}, ${board[board.turn].name} thinking`;
   if (mini.status.textContent !== text) mini.status.textContent = text;
   mini.status.className = `mini-status${board.error ? ' is-error' : board.humans_turn ? ' is-yours' : board.over ? ' is-over' : ''}`;
   const isSelected = board.board === selectedBoard && (selectedRound ? selectedRound === roundNumber : roundNumber === tournament.rounds.length);
@@ -1103,6 +1109,15 @@ tournamentForm.addEventListener('submit', async (event) => {
     await pollTournament();
   } catch (error) {
     $('tournament-error').textContent = error.message;
+  }
+});
+$('tournament-pause').addEventListener('click', async () => {
+  try {
+    renderTournament(await api(tournament && tournament.paused ? '/api/tournament/play' : '/api/tournament/pause', {}));
+    clearTimeout(pollTimer);
+    await pollTournament();
+  } catch (error) {
+    setStatus(error.message, { error: true });
   }
 });
 $('tournament-stop').addEventListener('click', async () => {

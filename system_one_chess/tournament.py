@@ -87,6 +87,7 @@ class Tournament:
         self._rounds_total = 0
         self._time_limit: float | None = None
         self._models: dict[str, dict] = {}
+        self._paused = False
         self._rounds = []
         self._played: set[frozenset] = set()
         self._balance: dict[str, int] = {}
@@ -118,6 +119,7 @@ class Tournament:
         self._participants = ids
         self._rounds_total = rounds
         self._time_limit = time_limit
+        self._paused = False
         self._balance = dict.fromkeys(ids, 0)
         self._opponents = {player: [] for player in ids}
         self._scores = {player: [] for player in ids}
@@ -223,7 +225,8 @@ class Tournament:
                     }
                 )
             self._rounds.append({"pairings": boards, "bye": round_["bye"]})
-        if self._rounds:
+        self._paused = bool(data.get("paused"))
+        if self._rounds and not self._paused:
             for entry in self._rounds[-1]["pairings"]:
                 if entry["result"] is None:
                     entry["task"] = asyncio.create_task(self._run_board(entry))
@@ -240,6 +243,7 @@ class Tournament:
             "participants": self._participants,
             "rounds_total": self._rounds_total,
             "time_limit": self._time_limit,
+            "paused": self._paused,
             "models": self._models,
             "played": [sorted(pair) for pair in self._played],
             "balance": self._balance,
@@ -313,6 +317,29 @@ class Tournament:
         self._save()
         entry["event"].set()
         return state
+
+    async def pause(self) -> dict:
+        """Stops asking the models; every board keeps its position and the clocks stop with it."""
+        if not self.active:
+            raise IllegalMove("no tournament is running")
+        self._paused = True
+        for entry in self._rounds[-1]["pairings"]:
+            if entry["task"] is not None and not entry["task"].done():
+                entry["task"].cancel()
+            entry["thinking_since"] = None
+        self._save()
+        return await self.view()
+
+    async def play(self) -> dict:
+        """Plays on after a pause: the unfinished boards of the current round start asking again."""
+        if not self.active:
+            raise IllegalMove("no tournament is running")
+        self._paused = False
+        for entry in self._rounds[-1]["pairings"]:
+            if entry["result"] is None and (entry["task"] is None or entry["task"].done()):
+                entry["error"] = None
+                entry["task"] = asyncio.create_task(self._run_board(entry))
+        return await self.view()
 
     async def retry(self, number: int) -> None:
         """Starts a board again after a gateway error stopped it."""
@@ -478,6 +505,9 @@ class Tournament:
                     finally:
                         entry["thinking_since"] = None
                 self._save()
+        except asyncio.CancelledError:
+            entry["thinking_since"] = None
+            raise
         except (JevError, IllegalMove) as error:
             entry["error"] = str(error)
             return
@@ -643,6 +673,7 @@ class Tournament:
             "id": self._id,
             "active": self.active,
             "done": self.done,
+            "paused": self._paused and self.active,
             "rounds_total": self._rounds_total,
             "time_limit": self._time_limit,
             "round": len(self._rounds),
