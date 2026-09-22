@@ -98,15 +98,33 @@ class Game:
             self._finish()
             return self._snapshot()
 
-    def _finish(self) -> None:
-        """Once a game is over it goes into the session ranking; a human seat counts as the player `human`."""
-        if not self._over():
-            return
-        players = {
+    def _players(self) -> dict[chess.Color, str]:
+        """Who sat at each colour for the rankings: a model id, or `human` for the seat the browser played."""
+        return {
             color: "human" if color in COLORS[self._human] else self._models[color]
             for color in (chess.WHITE, chess.BLACK)
         }
-        self._standings.record(self._id, players, self._result() or "*", self._forfeited, self._illegal, self._cost)
+
+    def _finish(self) -> None:
+        """Once a game is over it goes into the session ranking."""
+        if not self._over():
+            return
+        self._standings.record(
+            self._id, self._players(), self._result() or "*", self._forfeited, self._illegal, self._cost
+        )
+
+    async def outcome(self) -> dict:
+        """What a ranking needs to know about the current game, in the terms `Standings.record` takes."""
+        async with self._lock:
+            return {
+                "game_id": self._id,
+                "over": self._over(),
+                "players": self._players(),
+                "result": self._result() or "*",
+                "forfeited": self._forfeited,
+                "illegal": dict(self._illegal),
+                "cost": dict(self._cost),
+            }
 
     def _count(self, usage) -> None:
         self._usage["calls"] += 1

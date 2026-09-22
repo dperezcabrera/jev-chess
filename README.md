@@ -152,6 +152,17 @@ An LLM gets the same question as a System One model: the position (FEN, board, m
 
 So the same board hosts you against a cheap LLM, a frontier LLM against Jev, or Laya against anything, one game at a time, with the cost of each game in the footer and the engine analysis reporting each colour on its own. Every finished game of the session feeds the **Session ranking** in the side panel: one row per model and one for you, with games, wins, draws, losses, points, forfeits by illegal moves and what each side spent, first by points, then by fewer games, then by lower cost.
 
+## The tournament page
+
+**Tournament** in the top bar opens a second page, `/tournament`, with the same board and panel, so the single-game screen stays as it is. Pick the players (Jev, Laya and the LLMs you added, plus yourself if you tick "I play too") and the number of rounds, and the tournament runs by the Swiss system: every round pairs players on equal scores, nobody meets twice while that can be avoided, colours alternate as far as the balance allows, and with an odd number of players the lowest-placed one who has not had a bye sits the round out and scores a full point. Games between models play themselves, one after the other, and a game with you waits for your moves. The panel shows the round, the pairings with their results and the standings: points, the Buchholz tie-break (the points of the opponents faced), games and what each player spent. Every tournament game also counts in the session ranking.
+
+| Method | Path | Body | Description |
+|---|---|---|---|
+| GET | `/api/tournament` | | The tournament: rounds, pairings, results and standings |
+| POST | `/api/tournament` | `{"participants": ["jev", "llm:openai/gpt-5.6-luna"], "human": true, "rounds": 3}` | Start one; the first game starts with it |
+| POST | `/api/tournament/next` | | Record the finished game and start the next one, pairing a new round when the current one is complete; `409` while the game is still on |
+| DELETE | `/api/tournament` | | Abandon it |
+
 ## How it works
 
 Each Jev turn sends one request to the gateway's System One endpoint, `POST https://ai-gateway.vercel.sh/typesafe/v1/systemone` or `POST https://openrouter.ai/api/v1/systemone`. Both take the same body:

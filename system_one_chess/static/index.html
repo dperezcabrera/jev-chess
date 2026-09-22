@@ -16,6 +16,14 @@
     <h1 class="brand">How good is a <a href="https://docs.typesafe.ai/concepts/system-one" target="_blank" rel="noopener">System One model</a> at chess? <span class="brand-models">(<a href="https://typesafe.ai" target="_blank" rel="noopener">Jev</a>, <a href="https://huggingface.co/convaiinnovations/laya" target="_blank" rel="noopener">Laya</a>)</span></h1>
     <ul>
       <li>
+        <a id="nav-tournament" class="topbar-link" href="tournament" title="Swiss tournament between models and you">
+          <svg viewBox="0 0 24 24" width="1.25em" height="1.25em" fill="currentColor" aria-hidden="true"><path d="M17 4V2H7v2H2v3a5 5 0 0 0 4.4 5A6 6 0 0 0 11 15.9V18H8v2h8v-2h-3v-2.1a6 6 0 0 0 4.6-3.9A5 5 0 0 0 22 7V4zM4 7V6h3v3.9A3 3 0 0 1 4 7zm16 0a3 3 0 0 1-3 2.9V6h3z"/></svg>
+          <span>Tournament</span>
+        </a>
+        <a id="nav-play" class="topbar-link" href="./" title="Play a single game" hidden>
+          <svg viewBox="0 0 24 24" width="1.25em" height="1.25em" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+          <span>Single game</span>
+        </a>
         <button id="open-settings" class="topbar-link topbar-button" type="button" aria-label="Settings" title="Settings">
           <svg viewBox="0 0 24 24" width="1.5em" height="1.5em" fill="currentColor" aria-hidden="true"><path d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6a.5.5 0 0 0 .1-.7l-2-3.4a.5.5 0 0 0-.6-.2l-2.5 1a7.3 7.3 0 0 0-1.7-1l-.4-2.6a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 0-.5.4l-.4 2.7a7.3 7.3 0 0 0-1.7 1l-2.5-1a.5.5 0 0 0-.6.2l-2 3.4a.5.5 0 0 0 .1.7L4.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6a.5.5 0 0 0-.1.7l2 3.4c.1.2.4.3.6.2l2.5-1c.5.4 1.1.7 1.7 1l.4 2.6c0 .3.2.5.5.5h4c.2 0 .5-.2.5-.4l.4-2.7c.6-.3 1.2-.6 1.7-1l2.5 1c.2.1.5 0 .6-.2l2-3.4a.5.5 0 0 0-.1-.7L19.4 13zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg>
         </button>
@@ -45,7 +53,8 @@
 
   <aside class="panel">
     <header class="panel-header">
-      <p class="subtitle"><strong>Try to beat it.</strong> A System One model generates no text: it picks every move as a single typed decision. Jev is TypeSafe's, Laya is the open-source one.</p>
+      <p class="subtitle" id="subtitle-play"><strong>Try to beat it.</strong> A System One model generates no text: it picks every move as a single typed decision. Jev is TypeSafe's, Laya is the open-source one.</p>
+      <p class="subtitle" id="subtitle-tournament" hidden><strong>The battle for AI.</strong> System One models, LLMs and you in a Swiss tournament: games between models play themselves, yours wait for you.</p>
       <p class="game-id">Game <span id="game-id">&ndash;</span></p>
     </header>
 
@@ -74,7 +83,29 @@
       </div>
     </section>
 
-    <section class="ranking-section" aria-labelledby="ranking-title">
+    <section class="ranking-section tournament-section" id="tournament-section" aria-labelledby="tournament-title" hidden>
+      <h2 id="tournament-title">Tournament</h2>
+      <p id="tournament-status" class="tournament-status">No tournament yet</p>
+      <div class="ranking-box">
+        <table class="decision ranking">
+          <thead>
+            <tr>
+              <th class="col-rank" scope="col"><abbr title="Rank">#</abbr></th>
+              <th class="col-model" scope="col">Player</th>
+              <th class="col-num" scope="col"><abbr title="Games">G</abbr></th>
+              <th class="col-num" scope="col"><abbr title="Points, a bye scores one">Pts</abbr></th>
+              <th class="col-num" scope="col"><abbr title="Buchholz: the points of the opponents faced">Bh</abbr></th>
+              <th class="col-num" scope="col">Cost</th>
+            </tr>
+          </thead>
+          <tbody id="tournament-standings"></tbody>
+        </table>
+      </div>
+      <ol id="tournament-pairings" class="pairings" aria-label="Pairings of the current round"></ol>
+      <p class="side-manage"><button id="tournament-stop" class="link-button" type="button" hidden>Stop the tournament</button></p>
+    </section>
+
+    <section class="ranking-section" id="ranking-section" aria-labelledby="ranking-title">
       <h2 id="ranking-title">Session ranking</h2>
       <div class="ranking-box">
         <table class="decision ranking">
@@ -345,6 +376,49 @@
       </a>
     </footer>
   </div>
+</dialog>
+<dialog id="tournament-dialog" class="side-dialog" aria-labelledby="tournament-dialog-title">
+  <form id="tournament-form" class="side-form">
+    <header class="side-header">
+      <h2 id="tournament-dialog-title">New tournament</h2>
+      <p>Swiss system: every round pairs players on equal scores, nobody meets twice while it can be avoided, and an odd player out scores a bye.</p>
+    </header>
+
+    <div class="side-body">
+      <fieldset class="segment" id="participants-segment">
+        <legend>Players</legend>
+        <div class="chip-list" id="participants" role="group" aria-label="Participants"></div>
+      </fieldset>
+
+      <fieldset class="segment" id="you-segment">
+        <legend>You</legend>
+        <div class="segment-options">
+          <label class="segment-option"><input type="radio" name="human" value="yes" checked><span>I play too</span></label>
+          <label class="segment-option"><input type="radio" name="human" value="no"><span>Models only</span></label>
+        </div>
+      </fieldset>
+
+      <fieldset class="segment" id="rounds-segment">
+        <legend>Rounds</legend>
+        <div class="segment-options" id="rounds-options"></div>
+      </fieldset>
+
+      <div class="side-options side-options-watch" role="group" aria-label="Start">
+        <button class="side-card side-card-watch" type="submit" id="tournament-start">
+          <span class="side-art side-art-pair cg-wrap" aria-hidden="true"><piece class="king white"></piece><piece class="king black"></piece></span>
+          <span class="side-name">Start the tournament</span>
+          <span class="side-hint" id="tournament-hint">Pick at least two players</span>
+        </button>
+      </div>
+      <p class="side-manage"><button id="tournament-manage-models" class="link-button" type="button">Manage models</button> to add an LLM from OpenRouter to the field.</p>
+      <p id="tournament-error" class="settings-error" role="alert"></p>
+    </div>
+
+    <footer class="side-footer">
+      <p class="side-note">Games between models play themselves; your games wait for your move.</p>
+      <button id="tournament-cancel" class="button button-ghost" type="button">Cancel</button>
+    </footer>
+  </form>
 </dialog>
 <dialog id="side-dialog" class="side-dialog" aria-labelledby="side-title">
   <form id="side-form" class="side-form">

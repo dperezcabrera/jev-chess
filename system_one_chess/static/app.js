@@ -96,6 +96,7 @@ function render(state) {
   if (state.over) setStatus(`Game over: ${state.result}`);
   else if (state.humans_turn) setStatus(`Your move (${state.turn})`);
   else askJev();
+  maybeContinueTournament(state);
 }
 
 function renderUsage(usage) {
@@ -460,6 +461,159 @@ function renderStandings(rows) {
   }
 }
 
+const PAGE = /\/tournament\/?$/.test(location.pathname) ? 'tournament' : 'play';
+let tournament = null;
+let tournamentNextKey = null;
+
+function playerNode(player, extraClass = '') {
+  const head = Object.assign(document.createElement('span'), { className: `model-head ${extraClass}`.trim() });
+  head.append(logoNode(player), Object.assign(document.createElement('span'), { className: 'model-head-name', textContent: player.name, title: player.id }));
+  return head;
+}
+
+function renderTournament(view) {
+  tournament = view;
+  const status = $('tournament-status');
+  $('tournament-stop').hidden = !view.active;
+  if (!view.rounds.length) status.textContent = 'No tournament yet';
+  else if (view.done) status.innerHTML = `<strong>Finished</strong> after ${view.rounds_total} rounds`;
+  else {
+    const round = view.rounds[view.round - 1];
+    const pairing = round.pairings[view.game - 1];
+    status.replaceChildren(Object.assign(document.createElement('strong'), { textContent: `Round ${view.round} of ${view.rounds_total}` }), ` \u00b7 game ${view.game} of ${view.games_in_round}: ${pairing.white.name} vs ${pairing.black.name}`);
+  }
+  const body = $('tournament-standings');
+  body.replaceChildren();
+  for (const row of view.standings) {
+    const tr = body.insertRow();
+    Object.assign(tr.insertCell(), { className: 'col-rank', textContent: row.rank });
+    const cell = tr.insertCell();
+    cell.className = 'col-model';
+    cell.append(playerNode(row));
+    for (const value of [row.games, row.points % 1 ? row.points.toFixed(1) : row.points, row.buchholz % 1 ? row.buchholz.toFixed(1) : row.buchholz, `$${row.cost_usd.toFixed(4)}`]) {
+      Object.assign(tr.insertCell(), { className: 'col-num', textContent: value });
+    }
+  }
+  const list = $('tournament-pairings');
+  list.replaceChildren();
+  const round = view.rounds[view.rounds.length - 1];
+  if (!round) return;
+  round.pairings.forEach((pairing, index) => {
+    const li = document.createElement('li');
+    if (view.active && index === view.game - 1) li.classList.add('current');
+    li.append(playerNode(pairing.white, 'pair-white'), Object.assign(document.createElement('span'), { className: 'pair-vs', textContent: 'vs' }), playerNode(pairing.black), Object.assign(document.createElement('span'), { className: 'pair-result', textContent: pairing.result || '\u2013' }));
+    list.append(li);
+  });
+  if (round.bye) {
+    const li = document.createElement('li');
+    li.append(Object.assign(document.createElement('span'), { className: 'pair-bye', textContent: `${round.bye.name} sits this round out and scores a bye` }));
+    list.append(li);
+  }
+}
+
+async function loadTournament() {
+  try {
+    renderTournament(await api('/api/tournament'));
+  } catch (error) {
+    $('tournament-status').textContent = error.message;
+  }
+  return tournament;
+}
+
+function maybeContinueTournament(state) {
+  if (PAGE !== 'tournament' || !tournament || !tournament.active || !state.over) return;
+  if (state.game_id !== tournament.current_game_id || tournamentNextKey === state.game_id) return;
+  tournamentNextKey = state.game_id;
+  const current = generation;
+  setTimeout(async () => {
+    if (current !== generation) return;
+    try {
+      const data = await api('/api/tournament/next', {});
+      renderTournament(data.tournament);
+      if (current === generation) render(data.state);
+    } catch (error) {
+      setStatus(error.message, { error: true, retry: true });
+    }
+  }, 1800);
+}
+
+const tournamentDialog = $('tournament-dialog');
+const tournamentForm = $('tournament-form');
+const ROUND_CHOICES = [1, 2, 3, 4, 5, 6, 7];
+
+function renderParticipants() {
+  const box = $('participants');
+  const picked = new Set([...tournamentForm.querySelectorAll('input[name="participant"]:checked')].map((input) => input.value));
+  box.replaceChildren(...models.map((model) => {
+    const chip = document.createElement('label');
+    chip.className = 'chip';
+    const input = Object.assign(document.createElement('input'), { type: 'checkbox', name: 'participant', value: model.id, disabled: !model.ready, checked: model.ready && (picked.size ? picked.has(model.id) : model.kind === 'system_one') });
+    chip.append(input, logoNode(model), Object.assign(document.createElement('span'), { textContent: model.name }));
+    if (!model.ready) chip.append(Object.assign(document.createElement('small'), { textContent: model.note }));
+    return chip;
+  }));
+  if (!$('rounds-options').children.length) {
+    $('rounds-options').replaceChildren(...ROUND_CHOICES.map((n) => {
+      const label = document.createElement('label');
+      label.className = 'segment-option';
+      label.append(Object.assign(document.createElement('input'), { type: 'radio', name: 'rounds', value: n, checked: n === 3 }), Object.assign(document.createElement('span'), { textContent: n }));
+      return label;
+    }));
+  }
+  syncTournamentDialog();
+}
+
+function tournamentChoice() {
+  const participants = [...tournamentForm.querySelectorAll('input[name="participant"]:checked')].map((input) => input.value);
+  const human = tournamentForm.elements.human.value === 'yes';
+  const rounds = parseInt(tournamentForm.elements.rounds.value, 10);
+  return { participants, human, rounds };
+}
+
+function syncTournamentDialog() {
+  const { participants, human, rounds } = tournamentChoice();
+  const players = participants.length + (human ? 1 : 0);
+  const games = Math.floor(players / 2) * rounds;
+  $('tournament-start').disabled = players < 2;
+  $('tournament-hint').textContent = players < 2 ? 'Pick at least two players' : `${players} players, ${rounds} round${rounds === 1 ? '' : 's'}, ${games} game${games === 1 ? '' : 's'}${players % 2 ? ', one bye per round' : ''}`;
+}
+
+function openTournamentDialog({ cancellable }) {
+  $('tournament-cancel').hidden = !cancellable;
+  $('tournament-error').textContent = '';
+  renderParticipants();
+  loadModels();
+  tournamentDialog.showModal();
+}
+
+tournamentForm.addEventListener('change', syncTournamentDialog);
+$('tournament-cancel').addEventListener('click', () => tournamentDialog.close());
+$('tournament-manage-models').addEventListener('click', () => {
+  $('models-error').textContent = '';
+  $('models-dialog').showModal();
+  $('models-upstream').focus();
+});
+tournamentForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const current = ++generation;
+  try {
+    const data = await api('/api/tournament', tournamentChoice());
+    tournamentDialog.close();
+    renderTournament(data.tournament);
+    if (current === generation) render(data.state);
+  } catch (error) {
+    $('tournament-error').textContent = error.message;
+  }
+});
+$('tournament-stop').addEventListener('click', async () => {
+  try {
+    const response = await fetch('api/tournament', { method: 'DELETE' });
+    renderTournament(await response.json());
+  } catch (error) {
+    setStatus(error.message, { error: true });
+  }
+});
+
 function renderSegments() {
   for (const box of sideForm.querySelectorAll('[data-segment]')) {
     const name = box.dataset.segment;
@@ -500,6 +654,7 @@ async function loadModels() {
     renderSegments();
     syncSideDialog();
     renderModels(data);
+    if (PAGE === 'tournament') renderParticipants();
   } catch (error) {
     $('side-error').textContent = error.message;
   }
@@ -515,7 +670,7 @@ function openSideDialog({ cancellable }) {
   sideForm.elements.mode[0].focus();
 }
 
-$('new-game').addEventListener('click', () => openSideDialog({ cancellable: true }));
+$('new-game').addEventListener('click', () => (PAGE === 'tournament' ? openTournamentDialog({ cancellable: true }) : openSideDialog({ cancellable: true })));
 $('side-cancel').addEventListener('click', () => dialog.close());
 sideForm.addEventListener('change', syncSideDialog);
 
@@ -591,12 +746,26 @@ $('models-form').addEventListener('submit', async (event) => {
     renderSegments();
     syncSideDialog();
     renderModels(data);
+    if (PAGE === 'tournament') renderParticipants();
   } catch (error) {
     $('models-error').textContent = error.message;
   }
 });
 
 renderDecision([]);
-loadStandings();
-const initial = await refresh();
-if (initial && initial.history.length === 0) openSideDialog({ cancellable: false });
+if (PAGE === 'tournament') {
+  $('tournament-section').hidden = false;
+  $('ranking-section').hidden = true;
+  $('subtitle-play').hidden = true;
+  $('subtitle-tournament').hidden = false;
+  $('nav-tournament').hidden = true;
+  $('nav-play').hidden = false;
+  $('new-game').lastChild.textContent = ' New tournament';
+  const view = await loadTournament();
+  const initial = await refresh();
+  if (view && !view.active && initial) openTournamentDialog({ cancellable: false });
+} else {
+  loadStandings();
+  const initial = await refresh();
+  if (initial && initial.history.length === 0) openSideDialog({ cancellable: false });
+}

@@ -145,7 +145,7 @@ h2 { margin: 0 0 var(--space-2); font-size: 0.875rem; text-transform: uppercase;
 .empty { margin: 0; padding: var(--space-2); color: var(--text-muted); }
 .empty[hidden] { display: none; }
 
-.controls { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+.controls { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); flex-wrap: wrap; }
 a.button { text-decoration: none; }
 
 .promotion { position: absolute; inset: 0; z-index: 10; border-radius: var(--radius); background: rgb(20 16 10 / 0.55); }
@@ -546,3 +546,22 @@ html:has(dialog[open]) { overflow: hidden; scrollbar-gutter: stable; }
 .side-manage { margin: 0; font-size: 0.875rem; color: var(--text-muted); }
 .segment-options[data-segment] .segment-option { min-width: 0; }
 .segment-options[data-segment] .segment-option span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+
+.tournament-status { margin: 0 0 var(--space-2); font-size: 0.875rem; color: var(--text-muted); }
+.tournament-status strong { color: var(--text); }
+.pairings { margin: var(--space-2) 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--space-1); font-size: 0.875rem; }
+.pairings li { display: grid; grid-template-columns: 1fr auto 1fr auto; align-items: center; gap: var(--space-2); min-height: 28px; }
+.pairings .pair-white { justify-self: end; text-align: right; }
+.pairings .pair-vs { color: var(--text-muted); font-size: 0.75rem; }
+.pairings .pair-result { min-width: 5ch; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.pairings li.current { font-weight: 600; }
+.pairings .model-head { max-width: 100%; }
+.pairings .pair-bye { grid-column: 1 / -1; color: var(--text-muted); }
+.chip-list { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.chip { position: relative; display: inline-flex; align-items: center; gap: var(--space-2); min-height: 44px; padding: 0 var(--space-3) 0 var(--space-2); border: 1px solid var(--border); border-radius: 999px; background: var(--surface); font-weight: 600; cursor: pointer; }
+.chip input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.chip:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
+.chip:has(input:focus-visible) { outline: 3px solid var(--accent); outline-offset: 2px; }
+.chip:has(input:disabled) { opacity: 0.5; cursor: not-allowed; }
+.chip small { font-weight: 400; color: var(--text-muted); }
+.controls .button { white-space: nowrap; flex: 1 1 auto; }

@@ -17,6 +17,7 @@ from .models import LogoCache, ModelRegistry, SessionModels
 from .provider import LABELS, JevProvider, ProviderError, SessionCredentials
 from .settings import SessionSettings
 from .standings import Standings
+from .tournament import MAX_PARTICIPANTS, MAX_ROUNDS, Tournament
 
 STATIC_DIR = Path(__file__).with_name("static")
 SQUARE = r"^[a-h][1-8]$"
@@ -39,6 +40,12 @@ class NewGameRequest(BaseModel):
     black: str = Field(default="jev", max_length=120)
 
 
+class TournamentRequest(BaseModel):
+    participants: list[str] = Field(max_length=MAX_PARTICIPANTS)
+    human: bool = False
+    rounds: int = Field(default=3, ge=1, le=MAX_ROUNDS)
+
+
 class ModelRequest(BaseModel):
     upstream: str = Field(min_length=3, max_length=120)
 
@@ -47,6 +54,10 @@ class ModelRequest(BaseModel):
 class PageController:
     @get("/", include_in_schema=False)
     async def index(self):
+        return FileResponse(STATIC_DIR / "index.html")
+
+    @get("/tournament", include_in_schema=False)
+    async def tournament(self):
         return FileResponse(STATIC_DIR / "index.html")
 
 
@@ -125,6 +136,31 @@ class LogosController:
             return JSONResponse({"error": "no logo"}, status_code=404, headers={"Cache-Control": "max-age=300"})
         content, media_type = found
         return Response(content, media_type=media_type, headers={"Cache-Control": "max-age=86400"})
+
+
+@controller(prefix="/api/tournament")
+class TournamentController:
+    def __init__(self, tournament: Tournament):
+        self._tournament = tournament
+
+    @get("")
+    async def read(self):
+        return self._tournament.view()
+
+    @post("")
+    async def start(self, body: TournamentRequest):
+        state = await self._tournament.start(body.participants, body.human, body.rounds)
+        return {"tournament": self._tournament.view(), "state": state}
+
+    @post("/next")
+    async def next_game(self):
+        state = await self._tournament.next()
+        return {"tournament": self._tournament.view(), "state": state}
+
+    @delete("")
+    async def stop(self):
+        self._tournament.stop()
+        return self._tournament.view()
 
 
 @controller(prefix="/api/standings")

@@ -586,3 +586,68 @@ def test_finished_games_build_a_session_ranking(make_container, make_client):
     assert rows[0]["cost_usd"] == 0.0 and rows[0]["logo"] == ""
     client.post("/api/new", json={"human": "white", "black": "llm:openai/gpt-5-mini"})
     assert client.get("/api/standings").json()["rows"][0]["games"] == 1, "an unfinished game does not count"
+
+
+def test_swiss_pairing_matches_neighbours_avoids_rematches_and_gives_the_bye_to_the_last():
+    from system_one_chess.tournament import pair_round
+
+    balance = {"a": 0, "b": 0, "c": 0, "d": 0, "e": 0}
+    pairs, bye = pair_round(["a", "b", "c", "d", "e"], set(), balance, set())
+    assert pairs == [("a", "b"), ("c", "d")] and bye == "e"
+    balance = {"a": 1, "b": -1, "c": 1, "d": -1, "e": 0}
+    pairs, bye = pair_round(["a", "c", "e", "b", "d"], {frozenset("ab"), frozenset("cd")}, balance, {"e"})
+    assert pairs == [("a", "c"), ("b", "e")] and bye == "d", (
+        "a-c and e-b are new; b had black, so it takes white; d sits out"
+    )
+    pairs, bye = pair_round(["a", "b"], {frozenset("ab")}, {"a": 1, "b": -1}, set())
+    assert pairs == [("b", "a")] and bye is None, "a rematch with no alternative swaps the colours"
+
+
+def test_a_swiss_tournament_plays_itself_and_waits_for_you(make_container, make_client):
+    seen = []
+    client = llm_app(make_container, make_client, ["nothing", "still nothing"] * 6, seen)
+    client.post("/api/models", json={"upstream": "openai/gpt-5-mini"})
+    assert client.get("/api/tournament").json()["active"] is False
+    assert client.post("/api/tournament", json={"participants": ["jev", "nobody"]}).status_code == 409
+    assert client.post("/api/tournament", json={"participants": ["jev"]}).status_code == 409
+    assert client.post("/api/tournament", json={"participants": ["jev", "laya"], "rounds": 0}).status_code == 422
+    assert client.post("/api/tournament/next").status_code == 409
+
+    body = {"participants": ["llm:openai/gpt-5-mini", "jev"], "human": True, "rounds": 2}
+    started = client.post("/api/tournament", json=body).json()
+    view, state = started["tournament"], started["state"]
+    assert view["active"] and view["round"] == 1 and view["rounds_total"] == 2 and view["games_in_round"] == 1
+    first = view["rounds"][0]
+    assert (first["pairings"][0]["white"]["id"], first["pairings"][0]["black"]["id"]) == (
+        "llm:openai/gpt-5-mini",
+        "jev",
+    )
+    assert first["bye"] == {"id": "human", "name": "You", "logo": ""}, "three players: the last seed sits out"
+    assert {row["id"]: row["points"] for row in view["standings"]} == {
+        "human": 1.0,
+        "jev": 0.0,
+        "llm:openai/gpt-5-mini": 0.0,
+    }
+    assert state["human"] == "none" and state["game_id"] == view["current_game_id"]
+    assert client.post("/api/tournament/next").status_code == 409, "the game is not over yet"
+
+    state = client.post("/api/jev").json()
+    assert state["over"] and state["result"] == "0-1 by illegal moves"
+    following = client.post("/api/tournament/next").json()
+    view, state = following["tournament"], following["state"]
+    assert view["round"] == 2 and view["rounds"][0]["pairings"][0]["result"] == "0-1"
+    second = view["rounds"][1]
+    assert {second["pairings"][0]["white"]["id"], second["pairings"][0]["black"]["id"]} == {"human", "jev"}, (
+        "the two leaders meet"
+    )
+    assert second["bye"]["id"] == "llm:openai/gpt-5-mini" and state["human"] in ("white", "black")
+    rows = {row["id"]: row for row in view["standings"]}
+    assert (
+        rows["jev"]["points"] == 1.0 and rows["human"]["byes"] == 1 and rows["llm:openai/gpt-5-mini"]["forfeits"] == 1
+    )
+    assert rows["llm:openai/gpt-5-mini"]["points"] == 1.0 and rows["llm:openai/gpt-5-mini"]["byes"] == 1
+    assert rows["jev"]["buchholz"] == 2.0, "Jev faced the LLM (a point from its bye) and now you (a point from yours)"
+
+    client.post("/api/new", json={"human": "white"})
+    assert client.post("/api/tournament/next").status_code == 409, "a game started outside the tournament"
+    assert client.delete("/api/tournament").json()["active"] is False
