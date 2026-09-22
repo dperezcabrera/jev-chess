@@ -48,6 +48,7 @@ class TournamentRequest(BaseModel):
     participants: list[str] = Field(max_length=MAX_PARTICIPANTS)
     human: bool = False
     rounds: int = Field(default=3, ge=1, le=MAX_ROUNDS)
+    time_limit: float = Field(default=60.0, ge=0, le=24 * 60, description="minutes per player and game, 0 for none")
 
 
 class ModelRequest(BaseModel):
@@ -162,7 +163,8 @@ class TournamentController:
 
     @post("")
     async def start(self, body: TournamentRequest):
-        return await self._tournament.start(body.participants, body.human, body.rounds)
+        limit = body.time_limit * 60 if body.time_limit else None
+        return await self._tournament.start(body.participants, body.human, body.rounds, limit)
 
     @post("/participants")
     async def add_participants(self, body: ParticipantsRequest):

@@ -514,6 +514,16 @@
         <div class="segment-options" id="rounds-options"></div>
       </fieldset>
 
+      <fieldset class="segment" id="time-segment">
+        <legend>Clock</legend>
+        <div class="segment-options">
+          <label class="segment-option"><input type="radio" name="time_limit" value="30"><span>30 min</span><small>per player</small></label>
+          <label class="segment-option"><input type="radio" name="time_limit" value="60" checked><span>1 h</span><small>per player</small></label>
+          <label class="segment-option"><input type="radio" name="time_limit" value="120"><span>2 h</span><small>per player</small></label>
+          <label class="segment-option"><input type="radio" name="time_limit" value="0"><span>No clock</span><small>games can run long</small></label>
+        </div>
+      </fieldset>
+
       <div class="side-options side-options-watch" role="group" aria-label="Start">
         <button class="side-card side-card-watch" type="submit" id="tournament-start">
           <span class="side-art side-art-pair cg-wrap" aria-hidden="true"><piece class="king white"></piece><piece class="king black"></piece></span>

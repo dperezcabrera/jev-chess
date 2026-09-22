@@ -910,3 +910,24 @@ def test_players_can_join_a_running_tournament_and_play_the_current_round(make_c
     state = client.get("/api/tournament/board/1").json()
     assert not state["over"] and state["human"] in ("white", "black"), "your board still waits for you"
     assert client.delete("/api/tournament").json()["active"] is False
+
+
+def test_a_player_whose_deciding_time_passes_the_limit_loses_on_time(make_container, make_client):
+    legal = [lambda labels: json.dumps({"choice": labels[0]})] * 40
+    client = llm_app(make_container, make_client, legal, [])
+    client.post("/api/models", json={"upstream": "openai/gpt-5-mini"})
+    body = {"participants": ["llm:openai/gpt-5-mini", "jev"], "human": False, "rounds": 1, "time_limit": 1e-9}
+    view = client.post("/api/tournament", json=body).json()
+    assert view["time_limit"] == pytest.approx(6e-8)
+    view = until(lambda: (v := client.get("/api/tournament").json()) and v["done"] and v)
+    board = view["rounds"][0]["pairings"][0]
+    state = client.get("/api/tournament/board/1").json()
+    assert board["result"] == "0-1" and state["result"] == "0-1 on time" and len(state["history"]) == 1
+    assert state["time_limit"] == pytest.approx(6e-8)
+    assert '[Termination "time forfeit"]' in client.get("/api/tournament/pgn").text
+    assert client.get("/api/tournament/export").json()["time_limit"] == pytest.approx(6e-8)
+
+    body = {"participants": ["llm:openai/gpt-5-mini", "jev"], "human": False, "rounds": 1, "time_limit": 0}
+    view = client.post("/api/tournament", json=body).json()
+    assert view["time_limit"] is None, "zero means no clock"
+    assert client.delete("/api/tournament").json()["active"] is False

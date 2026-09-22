@@ -162,9 +162,16 @@ function clockSeconds(state, colour) {
   return used + base + Math.max(0, Date.now() - since) / 1000;
 }
 
+const formatClock = (seconds) => {
+  const total = Math.max(0, Math.round(seconds));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  return `${hours ? `${hours}:${String(minutes).padStart(2, '0')}` : minutes}:${String(total % 60).padStart(2, '0')}`;
+};
+
 const clockText = (state, colour) => {
-  const total = Math.round(clockSeconds(state, colour));
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+  const used = clockSeconds(state, colour);
+  return state.time_limit ? formatClock(state.time_limit - used) : formatClock(used);
 };
 
 function tickClocks() {
@@ -193,6 +200,8 @@ function renderPlayers(state) {
       bar.dataset.key = key;
     }
     bar.querySelector('.player-clock').textContent = clockText(state, colour);
+    bar.querySelector('.player-clock').classList.toggle('low', Boolean(state.time_limit) && state.time_limit - clockSeconds(state, colour) < 300);
+    bar.querySelector('.player-clock').title = state.time_limit ? 'Time left on the clock' : 'Time spent deciding in this game';
     bar.querySelector('.player-note').textContent = state.over ? (state.result || '').split(' ')[0] : toMove ? 'to move' : colour;
   }
 }
@@ -827,10 +836,11 @@ function miniNode(board, view, roundNumber) {
       el.dataset.key = key;
     }
     const live = !board.over && board.turn === colour ? (board.thinking_seconds || 0) : 0;
-    const total = Math.round(board.clock[colour] + live);
+    const used = board.clock[colour] + live;
     const clock = el.querySelector('.mini-clock');
     clock.classList.toggle('active', !board.over && board.turn === colour);
-    clock.textContent = `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+    clock.classList.toggle('low', Boolean(board.time_limit) && board.time_limit - used < 300);
+    clock.textContent = board.time_limit ? formatClock(board.time_limit - used) : formatClock(used);
   };
   row(topColour, mini.top);
   row(orientation, mini.bottom);
@@ -992,7 +1002,8 @@ function tournamentChoice() {
   const participants = [...tournamentForm.querySelectorAll('input[name="participant"]:checked')].map((input) => input.value);
   const human = tournamentForm.elements.human.value === 'yes';
   const rounds = parseInt(tournamentForm.elements.rounds.value, 10);
-  return { participants, human, rounds };
+  const time_limit = parseInt(tournamentForm.elements.time_limit.value, 10);
+  return { participants, human, rounds, time_limit };
 }
 
 function syncTournamentDialog() {
@@ -1010,7 +1021,9 @@ function syncTournamentDialog() {
   const players = participants.length + (human ? 1 : 0);
   const games = Math.floor(players / 2) * rounds;
   $('tournament-start').disabled = players < 2;
-  $('tournament-hint').textContent = players < 2 ? 'Pick at least two players' : `${players} players, ${rounds} round${rounds === 1 ? '' : 's'}, ${games} game${games === 1 ? '' : 's'}${players % 2 ? ', one bye per round' : ''}`;
+  const { time_limit } = tournamentChoice();
+  const clock = time_limit ? `, ${time_limit >= 60 ? `${time_limit / 60} h` : `${time_limit} min`} each` : '';
+  $('tournament-hint').textContent = players < 2 ? 'Pick at least two players' : `${players} players, ${rounds} round${rounds === 1 ? '' : 's'}, ${games} game${games === 1 ? '' : 's'}${players % 2 ? ', one bye per round' : ''}${clock}`;
 }
 
 async function resumeTournament(id) {
@@ -1057,6 +1070,7 @@ function openTournamentDialog(mode = 'new') {
   $('tournament-dialog-title').textContent = adding ? 'Add players' : 'New tournament';
   $('you-segment').hidden = adding;
   $('rounds-segment').hidden = adding;
+  $('time-segment').hidden = adding;
   $('saved-section').hidden = true;
   $('tournament-error').textContent = '';
   renderParticipants();
@@ -1212,7 +1226,7 @@ function renderModels(data) {
       remove.append(button);
     }
   }
-  $('models-suggested').replaceChildren(...data.suggested.map((m) => new Option(m.tier, m.upstream)));
+  $('models-suggested').replaceChildren(...data.suggested.map((m) => new Option(`${m.upstream} (${m.tier})`, m.upstream)));
   for (const m of data.suggested) suggestedTiers.set(m.upstream, m.tier);
 }
 

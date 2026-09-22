@@ -73,6 +73,7 @@ class Tournament:
         self._id = ""
         self._participants: list[str] = []
         self._rounds_total = 0
+        self._time_limit: float | None = None
         self._rounds = []
         self._played: set[frozenset] = set()
         self._balance: dict[str, int] = {}
@@ -84,7 +85,8 @@ class Tournament:
         self._semaphore: asyncio.Semaphore | None = None
         self._lock: asyncio.Lock | None = None
 
-    async def start(self, participants: list[str], human: bool, rounds: int) -> dict:
+    async def start(self, participants: list[str], human: bool, rounds: int, time_limit: float | None = None) -> dict:
+        """`time_limit` is the deciding time each player has per game, in seconds; None plays without clocks."""
         ids = list(dict.fromkeys(participants))
         known = {model.id: model for model in self._registry.list(self._credentials, self._session)}
         unknown = [model_id for model_id in ids if model_id not in known]
@@ -102,6 +104,7 @@ class Tournament:
         self.stop()
         self._participants = ids
         self._rounds_total = rounds
+        self._time_limit = time_limit
         self._balance = dict.fromkeys(ids, 0)
         self._opponents = {player: [] for player in ids}
         self._scores = {player: [] for player in ids}
@@ -149,6 +152,7 @@ class Tournament:
         self._id = data["id"]
         self._participants = list(data["participants"])
         self._rounds_total = data["rounds_total"]
+        self._time_limit = data.get("time_limit")
         self._played = {frozenset(pair) for pair in data["played"]}
         self._balance = dict(data["balance"])
         self._byes = set(data["byes"])
@@ -195,6 +199,7 @@ class Tournament:
             "elapsed": time.time() - self._started_at if self._started_at else 0.0,
             "participants": self._participants,
             "rounds_total": self._rounds_total,
+            "time_limit": self._time_limit,
             "played": [sorted(pair) for pair in self._played],
             "balance": self._balance,
             "byes": sorted(self._byes),
@@ -322,7 +327,9 @@ class Tournament:
                 self._opponents[black].append(white)
                 game = Game(self._chooser, self._credentials, self._registry, self._session, self._session_standings)
                 human = "white" if white == HUMAN else "black" if black == HUMAN else "none"
-                state = await game.new(human, white if white != HUMAN else black, black if black != HUMAN else white)
+                state = await game.new(
+                    human, white if white != HUMAN else black, black if black != HUMAN else white, self._time_limit
+                )
                 entry = {
                     "white": white,
                     "black": black,
@@ -384,7 +391,9 @@ class Tournament:
             self._opponents[black].append(white)
             game = Game(self._chooser, self._credentials, self._registry, self._session, self._session_standings)
             human = "white" if white == HUMAN else "black" if black == HUMAN else "none"
-            state = await game.new(human, white if white != HUMAN else black, black if black != HUMAN else white)
+            state = await game.new(
+                human, white if white != HUMAN else black, black if black != HUMAN else white, self._time_limit
+            )
             boards.append(
                 {
                     "white": white,
@@ -489,6 +498,7 @@ class Tournament:
             "exported_at": datetime.now(UTC).isoformat(timespec="seconds"),
             "system": "Swiss",
             "rounds_total": self._rounds_total,
+            "time_limit": self._time_limit,
             "done": self.done,
             "participants": [participant(model_id) for model_id in self._participants],
             "rounds": [
@@ -571,6 +581,7 @@ class Tournament:
                 "human": state["human"],
                 "humans_turn": state["humans_turn"],
                 "clock": {"white": usage["white"]["seconds"], "black": usage["black"]["seconds"]},
+                "time_limit": state["time_limit"],
                 "cost": usage["white"]["cost_usd"] + usage["black"]["cost_usd"],
                 "thinking_seconds": state["thinking_seconds"],
                 "thinking_since": entry["thinking_since"],
@@ -589,6 +600,7 @@ class Tournament:
             "active": self.active,
             "done": self.done,
             "rounds_total": self._rounds_total,
+            "time_limit": self._time_limit,
             "round": len(self._rounds),
             "boards_total": len(current),
             "boards_finished": sum(1 for b in current if b["result"] is not None),

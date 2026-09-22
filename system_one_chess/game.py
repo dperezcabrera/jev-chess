@@ -37,11 +37,13 @@ class Game:
         self._lock = asyncio.Lock()
         self._reset("white")
 
-    def _reset(self, human: str, white: str = "jev", black: str = "jev") -> None:
+    def _reset(self, human: str, white: str = "jev", black: str = "jev", time_limit: float | None = None) -> None:
         self._id = uuid.uuid4().hex[:8]
         self._board = chess.Board()
         self._human = human
         self._models = {chess.WHITE: white, chess.BLACK: black}
+        self._time_limit = time_limit
+        self._timed_out: chess.Color | None = None
         self._forfeited: chess.Color | None = None
         self._pardons = 0
         self._illegal = {chess.WHITE: 0, chess.BLACK: 0}
@@ -52,14 +54,15 @@ class Game:
         self._usage = self._empty_usage()
         self._usage_by_colour = {chess.WHITE: self._empty_usage(), chess.BLACK: self._empty_usage()}
 
-    async def new(self, human: str, white: str = "jev", black: str = "jev") -> dict:
+    async def new(self, human: str, white: str = "jev", black: str = "jev", time_limit: float | None = None) -> dict:
+        """`time_limit` is the seconds of deciding time each side has for the whole game; over it, it loses."""
         if human not in COLORS:
             raise IllegalMove(f"unknown color: {human!r}")
         known = {model.id for model in self._registry.list(self._credentials, self._session_models)}
         if white not in known or black not in known:
             raise IllegalMove(f"unknown model: {white!r}, {black!r}")
         async with self._lock:
-            self._reset(human, white, black)
+            self._reset(human, white, black, time_limit)
             return self._snapshot()
 
     async def snapshot(self) -> dict:
@@ -81,6 +84,7 @@ class Game:
                 raise IllegalMove(f"illegal move: {origin}{target}")
             seconds = time.monotonic() - self._turn_started
             self._usage_by_colour[board.turn]["seconds"] += seconds
+            self._check_time(board.turn)
             self._moves.append(
                 {
                     "ply": len(board.move_stack) + 1,
@@ -153,11 +157,14 @@ class Game:
             "moves": [dict(move) for move in self._moves],
             "jev_top": list(self._jev_top),
             "pardons": self._pardons,
+            "time_limit": self._time_limit,
+            "timed_out": self._colour_name(self._timed_out) if self._timed_out is not None else None,
         }
 
     def restore(self, record: dict) -> None:
         colours = {"white": chess.WHITE, "black": chess.BLACK}
-        self._reset(record["human"], record["models"]["white"], record["models"]["black"])
+        self._reset(record["human"], record["models"]["white"], record["models"]["black"], record.get("time_limit"))
+        self._timed_out = colours.get(record.get("timed_out"))
         self._id = record["id"]
         for uci in record["moves_uci"]:
             self._board.push_uci(uci)
@@ -244,13 +251,25 @@ class Game:
             totals["seconds"] += usage.seconds
             totals["illegal"] += usage.illegal
         self._illegal[self._board.turn] += usage.illegal
+        self._check_time(self._board.turn)
+
+    def _check_time(self, color: chess.Color) -> None:
+        """A side whose deciding time passes the limit loses on time, once the move it was making is counted."""
+        if self._time_limit is None or self._timed_out is not None or self._forfeited is not None:
+            return
+        if self._usage_by_colour[color]["seconds"] > self._time_limit and not self._board.is_game_over(claim_draw=True):
+            self._timed_out = color
 
     def _over(self) -> bool:
-        return self._forfeited is not None or self._board.is_game_over(claim_draw=True)
+        return self._forfeited is not None or self._timed_out is not None or self._board.is_game_over(claim_draw=True)
+
+    def _loser(self) -> chess.Color | None:
+        return self._forfeited if self._forfeited is not None else self._timed_out
 
     def _result(self) -> str | None:
-        if self._forfeited is not None:
-            return "0-1" if self._forfeited == chess.WHITE else "1-0"
+        loser = self._loser()
+        if loser is not None:
+            return "0-1" if loser == chess.WHITE else "1-0"
         return self._board.result(claim_draw=True) if self._board.is_game_over(claim_draw=True) else None
 
     async def pgn(self) -> tuple[str, str]:
@@ -269,6 +288,8 @@ class Game:
             game.headers["Result"] = self._result() or "*"
             if self._forfeited is not None:
                 game.headers["Termination"] = "illegal moves"
+            elif self._timed_out is not None:
+                game.headers["Termination"] = "time forfeit"
             return f"system-one-chess-{self._id}.pgn", str(game) + "\n"
 
     def _snapshot(self) -> dict:
@@ -291,6 +312,8 @@ class Game:
         result = None
         if self._forfeited is not None:
             result = f"{self._result()} by illegal moves"
+        elif self._timed_out is not None:
+            result = f"{self._result()} on time"
         elif outcome:
             result = f"{board.result(claim_draw=True)} by {outcome.termination.name.lower().replace('_', ' ')}"
         return {
@@ -322,6 +345,7 @@ class Game:
             "moves_uci": [move.uci() for move in board.move_stack],
             "fens": fens,
             "thinking_seconds": 0.0 if over else time.monotonic() - self._turn_started,
+            "time_limit": self._time_limit,
             "usage": dict(self._usage),
             "usage_by_colour": {
                 "white": dict(self._usage_by_colour[chess.WHITE]),
