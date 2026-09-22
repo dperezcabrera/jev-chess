@@ -1,4 +1,4 @@
-# AI chess battle: [System One models](https://docs.typesafe.ai/concepts/system-one) ([Jev](https://typesafe.ai), [Laya](https://huggingface.co/convaiinnovations/laya)), LLMs and you
+# AI chess battle
 
 `system-one-chess`: play chess in your browser against [Jev](https://typesafe.ai), TypeSafe AI's System One model, called through [Vercel AI Gateway](https://vercel.com/ai-gateway/models/jev) or [OpenRouter](https://openrouter.ai/typesafe).
 
