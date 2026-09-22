@@ -50,7 +50,6 @@ class Game:
         self._jev_top: list[dict] = []
         self._moves: list[dict] = []
         self._deciding = False
-        self._takebacks = 0
         self._turn_started = time.monotonic()
         self._clock_paused_at: float | None = None
         self._usage = self._empty_usage()
@@ -165,7 +164,6 @@ class Game:
             "moves": [dict(move) for move in self._moves],
             "jev_top": list(self._jev_top),
             "pardons": self._pardons,
-            "takebacks": self._takebacks,
             "time_limit": self._time_limit,
             "timed_out": self._colour_name(self._timed_out) if self._timed_out is not None else None,
             "clock_paused": self._clock_paused_at is not None,
@@ -187,7 +185,6 @@ class Game:
         self._moves = [dict(move) for move in record["moves"]]
         self._jev_top = list(record.get("jev_top", []))
         self._pardons = int(record.get("pardons", 0))
-        self._takebacks = int(record.get("takebacks", 0))
 
     def _players(self) -> dict[chess.Color, str]:
         """Who sat at each colour for the rankings: a model id, or `human` for the seat the browser played."""
@@ -203,42 +200,6 @@ class Game:
         self._standings.record(
             self._id, self._players(), self._result() or "*", self._forfeited, self._illegal, self._usage_by_colour
         )
-
-    async def takeback(self, ply: int | None = None) -> dict:
-        """Takes your last move back, and the model's reply to it if it came already, or goes back to `ply`
-        moves played, a position where it is your move; the game goes on from there. What the replies cost
-        stays counted, and the record keeps how many takebacks there were."""
-        async with self._lock:
-            if self._human == "none":
-                raise IllegalMove("only a game you play can take a move back")
-            mine = COLORS[self._human]
-            board = self._board
-            if not any(True for _ in board.move_stack) or all(m["player"] != "human" for m in self._moves):
-                raise IllegalMove("you have not moved yet")
-            if self._deciding:
-                raise IllegalMove("wait for the model's move, then take back")
-            if ply is not None:
-                if not 0 <= ply < len(board.move_stack):
-                    raise IllegalMove("that position is not behind the current one")
-                if (chess.WHITE if ply % 2 == 0 else chess.BLACK) not in mine:
-                    raise IllegalMove("pick a position where it is your move")
-                while len(board.move_stack) > ply:
-                    board.pop()
-                    self._moves.pop()
-            else:
-                if board.turn in mine:
-                    board.pop()
-                    self._moves.pop()
-                if board.move_stack:
-                    board.pop()
-                    self._moves.pop()
-            self._forfeited = None
-            self._timed_out = None
-            self._takebacks += 1
-            self._turn_started = time.monotonic()
-            self._clock_paused_at = None
-            self._jev_top = []
-            return self._snapshot()
 
     async def pause_clock(self) -> dict:
         """Stops your clock while it is your move; the time until you play on is not yours."""
@@ -410,7 +371,6 @@ class Game:
                 if move.get("illegal_answers")
             ],
             "pardons": self._pardons,
-            "takebacks": self._takebacks,
             "humans_turn": humans_turn,
             "jevs_turn": not over and not humans_turn,
             "dests": dests,

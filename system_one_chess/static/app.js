@@ -87,7 +87,6 @@ function renderMoves(history) {
 }
 
 function markViewing() {
-  if (current) renderTakeback(current);
   const shown = viewPly === null ? (current ? current.history.length : 0) : viewPly;
   for (const span of document.querySelectorAll('#moves span.move')) span.classList.toggle('viewing', parseInt(span.dataset.ply, 10) === shown && viewPly !== null);
   const total = current ? current.history.length : 0;
@@ -223,18 +222,6 @@ function renderIllegalAttempts(state) {
   }));
 }
 
-function renderTakeback(state) {
-  const button = $('takeback');
-  const mine = state.human !== 'none' && !selectedRound && state.humans_turn && !state.over && state.history.some((_, i) => (state.human === 'white' ? i % 2 === 0 : i % 2 === 1));
-  button.hidden = !mine;
-  if (!mine) return;
-  const viewing = viewPly !== null && viewPly < state.history.length;
-  const myTurnThere = viewing && (viewPly % 2 === 0) === (state.human === 'white');
-  button.disabled = viewing && !myTurnThere;
-  button.querySelector('span').textContent = viewing ? `Take back to move ${Math.floor(viewPly / 2) + 1}` : 'Take back';
-  button.title = viewing ? (myTurnThere ? 'Go back to this position and play on from here' : 'Pick a position where it is your move') : 'Take your last move back, with the reply it got';
-}
-
 function renderClockPause(state) {
   const button = $('clock-pause');
   const mine = PAGE === 'tournament' && selectedBoard && !selectedRound && state.human !== 'none' && state.humans_turn && !state.over;
@@ -249,7 +236,6 @@ function renderClockPause(state) {
 function render(state) {
   stateReceivedAt = Date.now();
   renderClockPause(state);
-  renderTakeback(state);
   renderPlayers(state);
   if (current && current.game_id !== state.game_id) viewPly = null;
   current = state;
@@ -517,18 +503,6 @@ $('pardon').addEventListener('click', async () => {
     if (turn === generation) render(state);
   } catch (error) {
     setStatus(error.message, { error: true, retry: true });
-  }
-});
-$('takeback').addEventListener('click', async () => {
-  if (!current) return;
-  const turn = ++generation;
-  try {
-    const body = viewPly !== null && viewPly < current.history.length ? { ply: viewPly } : {};
-    const state = await api(selectedBoard ? `/api/tournament/board/${selectedBoard}/takeback` : '/api/takeback', body);
-    viewPly = null;
-    if (turn === generation) render(state);
-  } catch (error) {
-    setStatus(error.message, { error: true });
   }
 });
 $('clock-pause').addEventListener('click', async () => {
