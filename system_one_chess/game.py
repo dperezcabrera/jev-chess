@@ -43,6 +43,7 @@ class Game:
         self._human = human
         self._models = {chess.WHITE: white, chess.BLACK: black}
         self._forfeited: chess.Color | None = None
+        self._pardons = 0
         self._illegal = {chess.WHITE: 0, chess.BLACK: 0}
         self._jev_top: list[dict] = []
         self._moves: list[dict] = []
@@ -151,6 +152,7 @@ class Game:
             },
             "moves": [dict(move) for move in self._moves],
             "jev_top": list(self._jev_top),
+            "pardons": self._pardons,
         }
 
     def restore(self, record: dict) -> None:
@@ -165,6 +167,7 @@ class Game:
         self._usage_by_colour = {colours[name]: dict(u) for name, u in record["usage_by_colour"].items()}
         self._moves = [dict(move) for move in record["moves"]]
         self._jev_top = list(record.get("jev_top", []))
+        self._pardons = int(record.get("pardons", 0))
 
     def _players(self) -> dict[chess.Color, str]:
         """Who sat at each colour for the rankings: a model id, or `human` for the seat the browser played."""
@@ -180,6 +183,20 @@ class Game:
         self._standings.record(
             self._id, self._players(), self._result() or "*", self._forfeited, self._illegal, self._usage_by_colour
         )
+
+    async def pardon(self) -> dict:
+        """Lets a game lost by illegal moves go on: the loser's illegal count starts again from zero. The forfeit
+        already counted in the ranking; from here the game counts as a new one."""
+        async with self._lock:
+            if self._forfeited is None:
+                raise IllegalMove("nobody has lost by illegal moves")
+            colour = self._forfeited
+            self._forfeited = None
+            self._illegal[colour] = 0
+            self._pardons += 1
+            self._id = f"{self._id.split('p')[0]}p{self._pardons}"
+            self._turn_started = time.monotonic()
+            return self._snapshot()
 
     async def outcome(self) -> dict:
         """What a ranking needs to know about the current game, in the terms `Standings.record` takes."""
@@ -211,6 +228,7 @@ class Game:
             "output_tokens": usage.output_tokens,
             "cost_usd": usage.cost_usd,
             "illegal": usage.illegal,
+            "illegal_answers": list(usage.illegal_answers),
         }
 
     @staticmethod
@@ -262,10 +280,12 @@ class Game:
             for move in board.legal_moves:
                 dests.setdefault(chess.square_name(move.from_square), []).append(chess.square_name(move.to_square))
         history = []
+        fens = [chess.STARTING_FEN]
         replay = chess.Board()
         for move in board.move_stack:
             history.append(replay.san(move))
             replay.push(move)
+            fens.append(replay.fen())
         last = board.peek() if board.move_stack else None
         outcome = board.outcome(claim_draw=True)
         result = None
@@ -280,6 +300,17 @@ class Game:
             "human": self._human,
             "models": {"white": self._models[chess.WHITE], "black": self._models[chess.BLACK]},
             "illegal": {"white": self._illegal[chess.WHITE], "black": self._illegal[chess.BLACK]},
+            "illegal_attempts": [
+                {
+                    "ply": move["ply"],
+                    "colour": move["colour"],
+                    "player": move["player"],
+                    "answers": move["illegal_answers"],
+                }
+                for move in self._moves
+                if move.get("illegal_answers")
+            ],
+            "pardons": self._pardons,
             "humans_turn": humans_turn,
             "jevs_turn": not over and not humans_turn,
             "dests": dests,
@@ -289,6 +320,7 @@ class Game:
             "result": result,
             "history": history,
             "moves_uci": [move.uci() for move in board.move_stack],
+            "fens": fens,
             "thinking_seconds": 0.0 if over else time.monotonic() - self._turn_started,
             "usage": dict(self._usage),
             "usage_by_colour": {

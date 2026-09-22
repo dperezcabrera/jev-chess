@@ -78,3 +78,45 @@ def test_the_schema_only_admits_the_labels_and_a_model_that_rejects_it_is_asked_
     assert [("response_format" in b) for b in bodies] == [True, False]
     asyncio.run(api.choose(gateway, "acme/plain", {"fen": "x"}, "Which move?", {"e4": None, "Nf3": None}))
     assert len(bodies) == 3 and "response_format" not in bodies[2], "the rejection is remembered"
+
+
+def test_an_empty_or_errored_reply_is_asked_again_and_is_not_an_illegal_move(monkeypatch):
+    import asyncio
+    import json
+
+    import httpx
+
+    from system_one_chess import llm as llm_module
+    from system_one_chess.llm import LLMApi, LLMError
+    from system_one_chess.provider import Gateway
+
+    real_sleep = asyncio.sleep
+    monkeypatch.setattr(llm_module.asyncio, "sleep", lambda _: real_sleep(0))
+    replies = [
+        {"message": {"content": "", "reasoning": "hmm"}, "finish_reason": "error"},
+        {"message": {"content": None}, "finish_reason": "stop"},
+        {"message": {"content": json.dumps({"choice": "Nf3"})}, "finish_reason": "stop"},
+    ]
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(json.loads(request.content))
+        reply = replies.pop(0) if replies else {"message": {"content": ""}, "finish_reason": "error"}
+        return httpx.Response(
+            200, json={"choices": [reply], "usage": {"prompt_tokens": 10, "completion_tokens": 0, "cost": 0.0001}}
+        )
+
+    api = LLMApi()
+    api._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    gateway = Gateway("openrouter", "https://openrouter.ai/api", "key", "", 30.0, False)
+    answer = asyncio.run(
+        api.choose(gateway, "acme/flaky", {"fen": "x"}, "Which move?", {"e4": None, "Nf3": None}, attempts=1)
+    )
+    assert answer.choice == "Nf3" and answer.illegal == 0 and answer.illegal_answers == ()
+    assert len(calls) == 3 and answer.cost_usd == 0.0003, "the blank replies cost and were retried, not counted"
+    try:
+        asyncio.run(api.choose(gateway, "acme/flaky", {"fen": "x"}, "Which move?", {"e4": None}, attempts=1))
+    except LLMError as error:
+        assert "no answer" in str(error)
+    else:
+        raise AssertionError("persistent blanks must fail as a gateway error, not as a forfeit")

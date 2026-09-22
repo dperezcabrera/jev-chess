@@ -422,19 +422,25 @@ class Tournament:
         return "\n".join(entry["pgn"] for round_ in self._rounds for entry in round_["pairings"] if entry.get("pgn"))
 
     def _table(self) -> list[dict]:
-        """The standings with the usual tie-breaks: Buchholz (the points of everyone a player has faced),
-        Sonneborn-Berger (the points of the opponents beaten plus half the points of those drawn), then wins."""
+        """The standings with the usual Swiss tie-breaks, in the order they decide: Buchholz Cut 1 (the points of
+        the opponents faced, without the lowest), full Buchholz, Buchholz Cut 2, Sonneborn-Berger (the points of
+        the opponents beaten plus half the points of those drawn), then wins. A bye adds no opponent."""
         rows = self._standings.table()
         points = {row["id"]: row["points"] for row in rows}
         for row in rows:
-            row["buchholz"] = sum(points[opponent] for opponent in self._opponents.get(row["id"], []))
+            faced = sorted(points[opponent] for opponent in self._opponents.get(row["id"], []))
+            row["buchholz"] = sum(faced)
+            row["buchholz_cut1"] = sum(faced[1:]) if faced else 0.0
+            row["buchholz_cut2"] = sum(faced[2:]) if len(faced) > 1 else 0.0
             row["sonneborn_berger"] = sum(
                 points[opponent] * earned for opponent, earned in self._scores.get(row["id"], [])
             )
         rows.sort(
             key=lambda row: (
                 -row["points"],
+                -row["buchholz_cut1"],
                 -row["buchholz"],
+                -row["buchholz_cut2"],
                 -row["sonneborn_berger"],
                 -row["wins"],
                 row["cost_usd"],

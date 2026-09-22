@@ -33,6 +33,7 @@ class Answer:
     cost_usd: float
     seconds: float
     illegal: int = 0
+    illegal_answers: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -47,6 +48,7 @@ class Decision:
     cost_usd: float
     seconds: float
     illegal: int = 0
+    illegal_answers: tuple[str, ...] = ()
 
 
 @component
@@ -194,7 +196,7 @@ class JevMoveChooser:
         try:
             answer = await self._llm.choose(gateway, upstream, _state(board), instructions, criteria, attempts, aliases)
         except IllegalAnswers as e:
-            usage = Answer("", {}, e.input_tokens, e.output_tokens, e.cost_usd, e.seconds, illegal=e.illegal)
+            usage = Answer("", {}, e.input_tokens, e.output_tokens, e.cost_usd, e.seconds, e.illegal, e.answers)
             raise Forfeit(str(e), usage) from e
         except LLMError as e:
             raise JevError(str(e)) from e
@@ -206,6 +208,7 @@ class JevMoveChooser:
             cost_usd=answer.cost_usd,
             seconds=answer.seconds,
             illegal=answer.illegal,
+            illegal_answers=answer.illegal_answers,
         )
 
     async def choose(
@@ -250,4 +253,5 @@ class JevMoveChooser:
             cost_usd=answer.cost_usd,
             seconds=answer.seconds,
             illegal=answer.illegal,
+            illegal_answers=answer.illegal_answers,
         )

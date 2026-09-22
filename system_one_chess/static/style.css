@@ -648,3 +648,17 @@ html:has(dialog[open]) { overflow: hidden; scrollbar-gutter: stable; }
 .saved-list .saved-text { min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
 .saved-list .saved-text strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .saved-list .saved-text small { color: var(--text-muted); }
+
+.scroll-x { overflow-x: auto; }
+.illegal-attempts { margin: var(--space-2) 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; font-size: 0.8125rem; color: var(--text-muted); }
+.illegal-attempts[hidden] { display: none; }
+.illegal-attempts li { display: flex; gap: var(--space-2); min-height: 24px; align-items: baseline; }
+.illegal-attempts .attempt-ply { flex: none; width: 5ch; font-variant-numeric: tabular-nums; }
+.illegal-attempts .attempt-text { color: var(--danger); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.replay { display: flex; align-items: center; gap: var(--space-1); }
+.replay-position { min-width: 6ch; text-align: center; font-size: 0.8125rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.moves li span.move { cursor: pointer; border-radius: 4px; padding: 0 4px; margin: 0 -4px; }
+.moves li span.move:hover { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.moves li span.move.viewing { background: var(--accent); color: #ffffff; }
+.moves li span.move:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

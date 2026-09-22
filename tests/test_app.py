@@ -408,8 +408,11 @@ def llm_stub(replies, seen):
 
 
 def llm_app(make_container, make_client, replies, seen, **env):
+    import tempfile
+
     from system_one_chess.llm import LLMApi
 
+    env.setdefault("TOURNAMENT_DIR", tempfile.mkdtemp(prefix="tournaments-"))
     config = configuration(FlatDictSource({"OPENROUTER_API_KEY": "server-key", **env}), DictSource({}))
     container = make_container("system_one_chess", "pico_fastapi", config=config)
     container.get(LLMApi)._client = httpx.AsyncClient(transport=httpx.MockTransport(llm_stub(replies, seen)))
@@ -460,6 +463,11 @@ def test_an_llm_plays_a_colour_through_the_chat_api_and_its_cost_is_counted(make
     client.post("/api/move", json={"from": "e2", "to": "e4"})
     state = client.post("/api/jev").json()
     assert state["history"] == ["e4", "e5"] and state["jev_top"] == []
+    assert (
+        len(state["fens"]) == 3
+        and state["fens"][0].startswith("rnbqkbnr/pppppppp")
+        and state["fens"][-1] == state["fen"]
+    )
     assert state["usage"]["calls"] == 1 and state["usage"]["cost_usd"] == pytest.approx(0.0009)
     assert state["usage_by_colour"]["black"]["cost_usd"] == pytest.approx(0.0009)
     assert state["usage_by_colour"]["white"]["seconds"] > 0, "the time you took over your move is on your clock"
@@ -515,6 +523,15 @@ def test_illegal_answers_add_up_over_the_game_as_in_chess(make_container, make_c
     assert state["over"] and state["result"] == "1-0 by illegal moves" and state["illegal"]["black"] == 2
     assert len(seen) == 3, "the second illegal answer of the game gets no retry"
     assert state["usage"]["calls"] == 2 and state["usage"]["cost_usd"] == pytest.approx(0.0027)
+    assert state["illegal_attempts"] == [
+        {"ply": 2, "colour": "black", "player": "llm:openai/gpt-5-mini", "answers": ["Kf9"]},
+        {"ply": 4, "colour": "black", "player": "llm:openai/gpt-5-mini", "answers": ["resign"]},
+    ], "every illegal reply is kept with its move, to see what went wrong"
+
+    pardoned = client.post("/api/pardon").json()
+    assert not pardoned["over"] and pardoned["illegal"]["black"] == 0 and pardoned["pardons"] == 1
+    assert pardoned["game_id"].endswith("p1") and pardoned["jevs_turn"]
+    assert client.post("/api/pardon").status_code == 409, "only a game lost by illegal moves can be pardoned"
 
 
 def test_an_llm_needs_an_openrouter_key(make_container, make_client):
@@ -668,6 +685,9 @@ def test_a_swiss_tournament_plays_its_boards_itself_and_waits_for_you(make_conta
         rows["jev"]["points"] == 1.0 and rows["human"]["byes"] == 1 and rows["llm:openai/gpt-5-mini"]["forfeits"] == 1
     )
     assert rows["jev"]["buchholz"] == 2.0 and rows["jev"]["sonneborn_berger"] == 1.0
+    assert rows["jev"]["buchholz_cut1"] == 1.0 and rows["jev"]["buchholz_cut2"] == 0.0, (
+        "cuts drop the weakest opponents"
+    )
     assert (
         rows["jev"]["calls"] == 0
         and rows["llm:openai/gpt-5-mini"]["calls"] == 1

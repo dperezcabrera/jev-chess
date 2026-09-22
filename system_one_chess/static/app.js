@@ -35,11 +35,12 @@ async function api(path, body) {
   return data;
 }
 
-function setStatus(text, { thinking = false, error = false, retry = false } = {}) {
+function setStatus(text, { thinking = false, error = false, retry = false, pardon = false } = {}) {
   $('status-text').textContent = text;
   $('status').classList.toggle('error', error);
   $('spinner').hidden = !thinking;
   $('retry').hidden = !retry;
+  $('pardon').hidden = !pardon;
 }
 
 function renderDecision(top) {
@@ -58,6 +59,8 @@ function renderDecision(top) {
   }
 }
 
+let viewPly = null;
+
 function renderMoves(history) {
   const list = $('moves');
   list.replaceChildren();
@@ -65,16 +68,75 @@ function renderMoves(history) {
   for (let i = 0; i < history.length; i += 2) {
     const item = document.createElement('li');
     const glyph = (ply) => (history[ply] ? history[ply] + (analysis.glyphs[ply] || '') : '');
-    for (const [className, text] of [['number', `${i / 2 + 1}.`], ['', glyph(i)], ['', glyph(i + 1)]]) {
-      const span = document.createElement('span');
-      span.className = className;
-      span.textContent = text;
+    item.append(Object.assign(document.createElement('span'), { className: 'number', textContent: `${i / 2 + 1}.` }));
+    for (const ply of [i, i + 1]) {
+      const span = Object.assign(document.createElement('span'), { className: history[ply] ? 'move' : '', textContent: glyph(ply) });
+      if (history[ply]) {
+        span.tabIndex = 0;
+        span.setAttribute('role', 'button');
+        span.dataset.ply = ply + 1;
+        span.addEventListener('click', () => viewPosition(ply + 1));
+        span.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); viewPosition(ply + 1); } });
+      }
       item.append(span);
     }
     list.append(item);
   }
-  $('moves-box').scrollTop = $('moves-box').scrollHeight;
+  markViewing();
+  if (viewPly === null) $('moves-box').scrollTop = $('moves-box').scrollHeight;
 }
+
+function markViewing() {
+  const shown = viewPly === null ? (current ? current.history.length : 0) : viewPly;
+  for (const span of document.querySelectorAll('#moves span.move')) span.classList.toggle('viewing', parseInt(span.dataset.ply, 10) === shown && viewPly !== null);
+  const total = current ? current.history.length : 0;
+  $('replay-position').textContent = total ? `${shown} / ${total}` : '';
+  $('replay-first').disabled = !total || shown === 0;
+  $('replay-prev').disabled = !total || shown === 0;
+  $('replay-next').disabled = !total || shown >= total;
+  $('replay-last').disabled = !total || viewPly === null;
+}
+
+function showPosition() {
+  if (!current) return;
+  const total = current.history.length;
+  if (viewPly !== null && viewPly >= total) viewPly = null;
+  const ply = viewPly === null ? total : viewPly;
+  const move = ply ? current.moves_uci[ply - 1] : null;
+  const live = viewPly === null;
+  ground.set({
+    fen: current.fens ? current.fens[ply] : current.fen,
+    lastMove: move ? [move.slice(0, 2), move.slice(2, 4)] : undefined,
+    check: live ? current.check : false,
+    turnColor: ply % 2 === 0 ? 'white' : 'black',
+    movable: { color: live && current.humans_turn ? current.turn : undefined, dests: live ? new Map(Object.entries(current.dests)) : new Map() },
+  });
+  markViewing();
+  const viewed = document.querySelector('#moves span.move.viewing');
+  if (viewed) viewed.scrollIntoView({ block: 'nearest' });
+}
+
+function viewPosition(ply) {
+  if (!current) return;
+  viewPly = ply >= current.history.length ? null : Math.max(0, ply);
+  showPosition();
+}
+
+$('replay-first').addEventListener('click', () => viewPosition(0));
+$('replay-prev').addEventListener('click', () => viewPosition((viewPly === null ? (current ? current.history.length : 0) : viewPly) - 1));
+$('replay-next').addEventListener('click', () => viewPosition((viewPly === null ? (current ? current.history.length : 0) : viewPly) + 1));
+$('replay-last').addEventListener('click', () => viewPosition(current ? current.history.length : 0));
+document.addEventListener('keydown', (event) => {
+  if (event.target.closest('input, textarea, select, dialog[open]')) return;
+  const total = current ? current.history.length : 0;
+  const shown = viewPly === null ? total : viewPly;
+  if (event.key === 'ArrowLeft') viewPosition(shown - 1);
+  else if (event.key === 'ArrowRight') viewPosition(shown + 1);
+  else if (event.key === 'Home') viewPosition(0);
+  else if (event.key === 'End') viewPosition(total);
+  else return;
+  event.preventDefault();
+});
 
 function playerOf(state, colour) {
   if (state.human === colour) return { id: 'human', name: 'You', logo: '' };
@@ -135,26 +197,34 @@ function renderPlayers(state) {
   }
 }
 
+function renderIllegalAttempts(state) {
+  const list = $('illegal-attempts');
+  const attempts = state.illegal_attempts || [];
+  const key = JSON.stringify(attempts);
+  list.hidden = attempts.length === 0;
+  if (list.dataset.key === key) return;
+  list.dataset.key = key;
+  list.replaceChildren(...attempts.map((attempt) => {
+    const li = document.createElement('li');
+    const number = `${Math.ceil(attempt.ply / 2)}${attempt.colour === 'white' ? '.' : '...'}`;
+    li.append(Object.assign(document.createElement('span'), { className: 'attempt-ply', textContent: number }), Object.assign(document.createElement('span'), { className: 'attempt-text', textContent: attempt.answers.map((a) => a.replace(/\s+/g, ' ')).join(' | '), title: `${playerOf(state, attempt.colour).name} answered: ${attempt.answers.join(' | ')}` }));
+    return li;
+  }));
+}
+
 function render(state) {
   stateReceivedAt = Date.now();
   renderPlayers(state);
-  ground.set({
-    fen: state.fen,
-    orientation: orientationOf(state),
-    turnColor: state.turn,
-    lastMove: state.last_move || undefined,
-    check: state.check,
-    movable: {
-      color: state.humans_turn ? state.turn : undefined,
-      dests: new Map(Object.entries(state.dests)),
-    },
-  });
+  if (current && current.game_id !== state.game_id) viewPly = null;
   current = state;
+  ground.set({ orientation: orientationOf(state) });
+  showPosition();
   currentHuman = state.human;
   renderUsage(state);
   syncAnalysis(state);
   $('game-id').textContent = state.game_id;
   renderDecision(state.jev_top);
+  renderIllegalAttempts(state);
   const lastMover = state.history.length ? (state.turn === 'white' ? 'black' : 'white') : null;
   $('decision-title').textContent = lastMover && state.human !== lastMover ? `${playerOf(state, lastMover).name}'s last decision` : 'Last decision';
   if (state.over && standingsKey !== state.game_id) {
@@ -162,7 +232,7 @@ function render(state) {
     loadStandings();
   }
   renderMoves(state.history);
-  if (state.over) setStatus(`Game over: ${state.result}`);
+  if (state.over) setStatus(`Game over: ${state.result}`, { pardon: PAGE === 'play' && /illegal moves$/.test(state.result || '') });
   else if (state.humans_turn) setStatus(`Your move (${state.turn})`);
   else if (PAGE === 'tournament') setStatus(`${playerOf(state, state.turn).name} is deciding`, { thinking: true });
   else askJev();
@@ -404,6 +474,15 @@ async function refresh() {
 }
 
 $('retry').addEventListener('click', refresh);
+$('pardon').addEventListener('click', async () => {
+  const turn = ++generation;
+  try {
+    const state = await api('/api/pardon', {});
+    if (turn === generation) render(state);
+  } catch (error) {
+    setStatus(error.message, { error: true, retry: true });
+  }
+});
 $('flip-board').addEventListener('click', () => {
   flipped = !flipped;
   $('flip-board').setAttribute('aria-pressed', String(flipped));
@@ -649,7 +728,7 @@ function renderStandingsDialog(view) {
     cell.className = 'col-text';
     cell.append(playerNode(row));
     const half = (n) => (n % 1 ? n.toFixed(1) : n);
-    const values = [row.games, row.wins, row.draws, row.losses, half(row.points), half(row.buchholz), half(row.sonneborn_berger), row.calls, `${compactTokens(row.input_tokens)} / ${compactTokens(row.output_tokens)}`, compactTime(row.seconds), row.forfeits ? `${row.illegal} (${row.forfeits} lost)` : row.illegal, `$${row.cost_usd.toFixed(4)}`];
+    const values = [row.games, row.wins, row.draws, row.losses, half(row.points), half(row.buchholz_cut1), half(row.buchholz), half(row.buchholz_cut2), half(row.sonneborn_berger), row.calls, `${compactTokens(row.input_tokens)} / ${compactTokens(row.output_tokens)}`, compactTime(row.seconds), row.forfeits ? `${row.illegal} (${row.forfeits} lost)` : row.illegal, `$${row.cost_usd.toFixed(4)}`];
     for (const value of values) Object.assign(tr.insertCell(), { className: 'col-num', textContent: value });
   }
 }

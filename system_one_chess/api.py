@@ -85,6 +85,10 @@ class GameController:
     async def move(self, body: MoveRequest):
         return await self._game.human_move(body.origin, body.target, body.promotion)
 
+    @post("/pardon")
+    async def pardon(self):
+        return await self._game.pardon()
+
     @post("/jev")
     async def jev(self):
         return await self._game.jev_move()

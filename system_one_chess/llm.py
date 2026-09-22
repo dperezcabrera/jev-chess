@@ -1,8 +1,11 @@
 """An LLM answering the same question as a System One model: pick one option from a labelled list.
 
 The chat completion is asked for a JSON object with the chosen label. A reply that names no option is an
-illegal move; the caller says how many the model may still make, and one more than that forfeits."""
+illegal move; the caller says how many the model may still make, and one more than that forfeits. An empty
+reply, or one the gateway flags as an error, is no answer at all: it is asked again and never counts as
+illegal, and after a few in a row the call fails like any other gateway error."""
 
+import asyncio
 import json
 import re
 import time
@@ -25,6 +28,7 @@ RETRY_PROMPT = (
 )
 MAX_TOKENS = 4000
 TRIM = ".,;:!?*'\"`"
+BLANK_RETRIES = 3
 
 
 @dataclass(frozen=True)
@@ -35,6 +39,7 @@ class LLMAnswer:
     cost_usd: float
     seconds: float
     illegal: int
+    illegal_answers: tuple[str, ...] = ()
 
 
 class LLMError(Exception):
@@ -45,10 +50,18 @@ class IllegalAnswers(LLMError):
     """The model used up its illegal answers without naming a legal option; the attempts still cost."""
 
     def __init__(
-        self, upstream: str, illegal: int, input_tokens: int, output_tokens: int, cost_usd: float, seconds: float
+        self,
+        upstream: str,
+        illegal: int,
+        input_tokens: int,
+        output_tokens: int,
+        cost_usd: float,
+        seconds: float,
+        answers: tuple[str, ...] = (),
     ):
         super().__init__(f"{upstream} did not name a legal option after {illegal} illegal answers")
         self.illegal = illegal
+        self.answers = answers
         self.input_tokens = input_tokens
         self.output_tokens = output_tokens
         self.cost_usd = cost_usd
@@ -155,11 +168,15 @@ class LLMApi:
             {"role": "user", "content": render(state, instructions, criteria)},
         ]
         totals = {"input": 0, "output": 0, "cost": 0.0}
+        wrong: list[str] = []
+        blanks = 0
         started = time.perf_counter()
-        for attempt in range(max(1, attempts)):
+        attempt = 0
+        while attempt < max(1, attempts):
             try:
                 response = await self.complete(gateway, upstream, messages, labels)
                 text = reply_text(response)
+                finish = response["choices"][0].get("finish_reason")
             except httpx.HTTPStatusError as e:
                 raise LLMError(f"HTTP {e.response.status_code}: {e.response.text[:300]}") from e
             except (httpx.HTTPError, KeyError, IndexError, TypeError) as e:
@@ -168,6 +185,13 @@ class LLMApi:
             totals["input"] += int(usage.get("prompt_tokens") or 0)
             totals["output"] += int(usage.get("completion_tokens") or 0)
             totals["cost"] += float(usage.get("cost") or 0.0)
+            if finish == "error" or not text.strip():
+                blanks += 1
+                if blanks > BLANK_RETRIES:
+                    raise LLMError(f"{upstream} returned no answer {blanks} times in a row (finish_reason {finish!r})")
+                await asyncio.sleep(1.0)
+                continue
+            attempt += 1
             choice = parse_choice(text, labels, aliases)
             if choice is not None:
                 return LLMAnswer(
@@ -176,20 +200,26 @@ class LLMApi:
                     totals["output"],
                     totals["cost"],
                     time.perf_counter() - started,
-                    attempt,
+                    attempt - 1,
+                    tuple(wrong),
                 )
+            wrong.append(text.strip()[:200])
             messages += [
                 {"role": "assistant", "content": text[:2000]},
                 {"role": "user", "content": RETRY_PROMPT.format(answer=text.strip()[:200], labels=json.dumps(labels))},
             ]
         raise IllegalAnswers(
-            upstream, max(1, attempts), totals["input"], totals["output"], totals["cost"], time.perf_counter() - started
+            upstream,
+            max(1, attempts),
+            totals["input"],
+            totals["output"],
+            totals["cost"],
+            time.perf_counter() - started,
+            tuple(wrong),
         )
 
     @cleanup
     def close(self) -> None:
-        import asyncio
-
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
