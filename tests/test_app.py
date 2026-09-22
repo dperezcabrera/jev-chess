@@ -508,3 +508,18 @@ def test_an_llm_needs_an_openrouter_key(make_container, make_client):
     client.post("/api/new", json={"human": "white", "black": "llm:openai/gpt-5-mini"})
     client.post("/api/move", json={"from": "e2", "to": "e4"})
     assert "OpenRouter key" in client.post("/api/jev").json()["error"]
+
+
+def test_the_suggested_models_come_from_a_file_that_is_read_on_every_request(make_container, make_client, tmp_path):
+    from system_one_chess.models import DEFAULT_MODELS_FILE
+
+    assert any(entry["upstream"] == "x-ai/grok-4.7" for entry in json.loads(DEFAULT_MODELS_FILE.read_text()))
+    custom = tmp_path / "models.json"
+    custom.write_text('[{"upstream": "acme/chess-1", "tier": "house"}]')
+    client = llm_app(make_container, make_client, [], [], MODELS_FILE=str(custom))
+    assert client.get("/api/models").json()["suggested"] == [{"upstream": "acme/chess-1", "tier": "house"}]
+    custom.write_text('[{"upstream": "acme/chess-2"}]')
+    assert client.get("/api/models").json()["suggested"] == [{"upstream": "acme/chess-2", "tier": ""}]
+    custom.write_text("not json")
+    with pytest.raises(ValueError, match="cannot read the suggested models"):
+        client.get("/api/models")

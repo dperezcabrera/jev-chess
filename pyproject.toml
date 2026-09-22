@@ -28,7 +28,7 @@ build-backend = "setuptools.build_meta"
 packages = ["system_one_chess"]
 
 [tool.setuptools.package-data]
-system_one_chess = ["static/**/*"]
+system_one_chess = ["static/**/*", "models.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

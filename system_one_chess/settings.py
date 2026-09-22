@@ -34,6 +34,12 @@ class JevSettings:
     model: str = ""
 
 
+@configured(prefix="MODELS_", mapping="flat")
+@dataclass
+class ModelsSettings:
+    file: str = ""
+
+
 @configured(prefix="SESSION_", mapping="flat")
 @dataclass
 class SessionSettings:

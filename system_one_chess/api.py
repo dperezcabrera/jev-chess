@@ -13,7 +13,7 @@ from starlette.staticfiles import StaticFiles
 from . import laya as local_model
 from .game import Game, IllegalMove
 from .jev import JevError
-from .models import SUGGESTED_LLMS, ModelRegistry, SessionModels
+from .models import ModelRegistry, SessionModels
 from .provider import LABELS, JevProvider, ProviderError, SessionCredentials
 from .settings import SessionSettings
 
@@ -121,7 +121,7 @@ class ModelsController:
 
     def _view(self) -> dict:
         models = [asdict(model) for model in self._registry.list(self._credentials, self._session)]
-        return {"models": models, "suggested": [{"upstream": u, "tier": t} for u, t in SUGGESTED_LLMS.items()]}
+        return {"models": models, "suggested": self._registry.suggested()}
 
     @get("")
     async def read(self):

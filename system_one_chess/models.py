@@ -3,25 +3,31 @@
 A model id is what the start screen sends for each colour. `jev` and `laya` are the built-in System One
 models; an LLM is added by its OpenRouter id, such as `openai/gpt-5.6-luna`, and answers through the chat API."""
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 
 from pico_ioc import component
 
 from . import laya as local_model
 from .provider import JevProvider, SessionCredentials
+from .settings import ModelsSettings
 
-SUGGESTED_LLMS = {
-    "anthropic/claude-fable-5.1": "frontier",
-    "anthropic/claude-opus-5": "frontier",
-    "meta/muse-spark-1.3": "frontier",
-    "google/gemini-3.8-flash": "frontier",
-    "google/gemini-3.1-pro-preview": "frontier",
-    "deepseek/deepseek-v4.1-flash": "open weights",
-    "z-ai/glm-5.3": "open weights",
-    "openai/gpt-5.6-luna": "ultra cheap",
-    "google/gemma-4-31b-it": "ultra cheap",
-}
 LLM_LIMIT = 12
+DEFAULT_MODELS_FILE = Path(__file__).with_name("models.json")
+
+
+def suggested_llms(path: Path) -> list[dict]:
+    """The LLM ids the Models dialog suggests, read on every call so the file can be edited without a restart."""
+    try:
+        entries = json.loads(path.read_text())
+    except (OSError, ValueError) as e:
+        raise ValueError(f"cannot read the suggested models from {path}: {e}") from e
+    if not isinstance(entries, list) or not all(
+        isinstance(entry, dict) and "/" in str(entry.get("upstream", "")) for entry in entries
+    ):
+        raise ValueError(f'{path} must hold a JSON list of {{"upstream": "vendor/model", "tier": "..."}} objects')
+    return [{"upstream": str(entry["upstream"]), "tier": str(entry.get("tier", ""))} for entry in entries]
 
 
 @dataclass(frozen=True)
@@ -65,8 +71,12 @@ def llm_name(upstream: str) -> str:
 
 @component
 class ModelRegistry:
-    def __init__(self, provider: JevProvider):
+    def __init__(self, provider: JevProvider, settings: ModelsSettings):
         self._provider = provider
+        self._file = Path(settings.file) if settings.file else DEFAULT_MODELS_FILE
+
+    def suggested(self) -> list[dict]:
+        return suggested_llms(self._file)
 
     def list(self, credentials: SessionCredentials, session: SessionModels) -> list[Model]:
         jev = self._provider.gateway(credentials, "jev")
