@@ -714,7 +714,7 @@ function renderModels(data) {
     ready.append(Object.assign(document.createElement('span'), { className: model.ready ? 'ready-yes' : 'ready-no', textContent: model.ready ? 'yes' : model.note }));
     const remove = row.insertCell();
     remove.className = 'col-badge';
-    if (model.kind === 'llm') {
+    if (model.removable) {
       const button = Object.assign(document.createElement('button'), { className: 'icon-button', type: 'button', title: 'Remove' });
       button.setAttribute('aria-label', `Remove ${model.name}`);
       button.innerHTML = '<svg viewBox="0 0 24 24" width="1.25em" height="1.25em" fill="currentColor" aria-hidden="true"><path d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7l-1.4-1.4L9.2 12 2.9 5.7l1.4-1.4 6.3 6.3 6.3-6.3z" transform="translate(1.4 0)"/></svg>';

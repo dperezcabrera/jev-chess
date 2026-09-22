@@ -395,8 +395,8 @@ html:has(dialog[open]) { overflow: hidden; scrollbar-gutter: stable; }
 .segment { display: grid; grid-template-columns: 7ch 1fr; align-items: center; gap: var(--space-3); margin: 0; padding: 0; border: 0; min-width: 0; }
 .segment legend { float: left; font-size: 0.875rem; color: var(--text-muted); }
 .segment[hidden] { display: none; }
-.segment-options { display: flex; gap: var(--space-1); padding: var(--space-1); border-radius: var(--radius); background: color-mix(in srgb, var(--border) 45%, transparent); }
-.segment-option { position: relative; flex: 1 1 0; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 44px; padding: var(--space-1) var(--space-2); border-radius: calc(var(--radius) - 2px); cursor: pointer; text-align: center; line-height: 1.2; }
+.segment-options { display: flex; flex-wrap: wrap; gap: var(--space-1); padding: var(--space-1); border-radius: var(--radius); background: color-mix(in srgb, var(--border) 45%, transparent); }
+.segment-option { position: relative; flex: 1 1 128px; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 44px; padding: var(--space-1) var(--space-2); border-radius: calc(var(--radius) - 2px); cursor: pointer; text-align: center; line-height: 1.2; }
 .segment-option input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
 .segment-option span { font-weight: 600; }
 .segment-option small { font-size: 0.75rem; color: var(--text-muted); }

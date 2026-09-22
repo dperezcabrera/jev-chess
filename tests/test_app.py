@@ -420,8 +420,11 @@ def llm_app(make_container, make_client, replies, seen, **env):
 def test_models_are_listed_and_llms_are_added_per_session(make_container, make_client):
     client = llm_app(make_container, make_client, [], [])
     listed = client.get("/api/models").json()
-    assert [m["id"] for m in listed["models"]] == ["jev", "laya"]
+    configured = [entry["upstream"] for entry in listed["suggested"]]
+    assert [m["id"] for m in listed["models"]] == ["jev", "laya"] + [f"llm:{u}" for u in configured]
     assert listed["models"][0]["ready"] and listed["models"][0]["kind"] == "system_one"
+    grok = next(m for m in listed["models"] if m["upstream"] == "x-ai/grok-4.7")
+    assert grok["ready"] and not grok["removable"], "the models file configures it for every session"
     assert {"upstream": "openai/gpt-5.6-luna", "tier": "ultra cheap"} in listed["suggested"]
 
     added = client.post("/api/models", json={"upstream": "openai/gpt-5-mini"}).json()
@@ -435,9 +438,13 @@ def test_models_are_listed_and_llms_are_added_per_session(make_container, make_c
         "ready": True,
         "note": "",
         "logo": "/api/logos/openai",
+        "removable": True,
     }
     assert client.post("/api/models", json={"upstream": "not an id"}).status_code == 422
-    assert client.delete("/api/models/openai/gpt-5-mini").json()["models"][-1]["id"] == "laya"
+    assert client.delete("/api/models/openai/gpt-5-mini").json()["models"][-1]["id"] != "llm:openai/gpt-5-mini"
+    assert client.delete("/api/models/x-ai/grok-4.7").json()["models"][-1]["upstream"] == "google/gemma-4-31b-it", (
+        "configured ones stay"
+    )
 
 
 def test_an_llm_plays_a_colour_through_the_chat_api_and_its_cost_is_counted(make_container, make_client):

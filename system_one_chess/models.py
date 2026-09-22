@@ -1,4 +1,5 @@
-"""Who can play: the System One models the server knows about and the LLMs a session adds.
+"""Who can play: the System One models the server knows about, the LLMs the models file configures, and the
+LLMs a session adds on top.
 
 A model id is what the start screen sends for each colour. `jev` and `laya` are the built-in System One
 models; an LLM is added by its OpenRouter id, such as `openai/gpt-5.6-luna`, and answers through the chat API."""
@@ -64,6 +65,7 @@ class Model:
     ready: bool
     note: str = ""
     logo: str = ""
+    removable: bool = False
 
 
 @component(scope="session")
@@ -120,7 +122,8 @@ class ModelRegistry:
         return logo_path(model_id, read_models_file(self._file)["logos"]) if model_id != "human" else ""
 
     def list(self, credentials: SessionCredentials, session: SessionModels) -> list[Model]:
-        logos = read_models_file(self._file)["logos"]
+        file = read_models_file(self._file)
+        logos = file["logos"]
         jev = self._provider.gateway(credentials, "jev")
         openrouter = self._provider.gateway_for("openrouter", credentials)
         installed = local_model.available()
@@ -146,7 +149,8 @@ class ModelRegistry:
                 logo_path("laya", logos),
             ),
         ]
-        for upstream in session.llms:
+        configured = [entry["upstream"] for entry in file["suggested"]]
+        for upstream in configured + [u for u in session.llms if u not in configured]:
             ready = bool(openrouter.api_key)
             models.append(
                 Model(
@@ -158,6 +162,7 @@ class ModelRegistry:
                     ready,
                     "" if ready else "needs an OpenRouter key",
                     logo_path(llm_id(upstream), logos),
+                    upstream not in configured,
                 )
             )
         return models
