@@ -15,6 +15,7 @@ import httpx
 from pico_ioc import cleanup, component
 
 from .provider import Gateway
+from .retry import post_with_retries
 
 SYSTEM_PROMPT = (
     "You are playing a game. You will receive the game state, the exact list of legal labels as a JSON array, "
@@ -144,7 +145,8 @@ class LLMApi:
         return response.json()
 
     async def _post(self, gateway: Gateway, body: dict) -> httpx.Response:
-        return await self._client.post(
+        return await post_with_retries(
+            self._client,
             f"{gateway.base_url}/v1/chat/completions",
             json=body,
             headers={"Authorization": f"Bearer {gateway.api_key}", "X-Title": "system-one-chess"},

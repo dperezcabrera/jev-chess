@@ -113,7 +113,9 @@ def test_an_empty_or_errored_reply_is_asked_again_and_is_not_an_illegal_move(mon
         api.choose(gateway, "acme/flaky", {"fen": "x"}, "Which move?", {"e4": None, "Nf3": None}, attempts=1)
     )
     assert answer.choice == "Nf3" and answer.illegal == 0 and answer.illegal_answers == ()
-    assert len(calls) == 3 and abs(answer.cost_usd - 0.0003) < 1e-9, "the blank replies cost and were retried, not counted"
+    assert len(calls) == 3 and abs(answer.cost_usd - 0.0003) < 1e-9, (
+        "the blank replies cost and were retried, not counted"
+    )
     try:
         asyncio.run(api.choose(gateway, "acme/flaky", {"fen": "x"}, "Which move?", {"e4": None}, attempts=1))
     except LLMError as error:

@@ -9,6 +9,7 @@ from pico_ioc import cleanup, component
 from .laya import LayaModel
 from .llm import IllegalAnswers, LLMApi, LLMError
 from .provider import NO_KEY, Gateway, JevProvider, SessionCredentials
+from .retry import post_with_retries
 from .settings import IllegalMovesSettings
 
 
@@ -57,7 +58,8 @@ class JevApi:
         self._client = httpx.AsyncClient()
 
     async def system_one(self, gateway: Gateway, body: dict) -> dict:
-        response = await self._client.post(
+        response = await post_with_retries(
+            self._client,
             f"{gateway.base_url}/v1/systemone",
             json=body,
             headers={"Authorization": f"Bearer {gateway.api_key}"},
