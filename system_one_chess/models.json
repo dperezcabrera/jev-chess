@@ -59,6 +59,24 @@
       "tier": "mid"
     },
     {
+      "upstream": "deepseek/deepseek-v4-pro-0813",
+      "tier": "open weights",
+      "reasoning": {
+        "effort": "low"
+      }
+    },
+    {
+      "upstream": "anthropic/claude-haiku-4.5",
+      "tier": "cheap"
+    },
+    {
+      "upstream": "qwen/qwen3.8-max-0902",
+      "tier": "mid",
+      "reasoning": {
+        "effort": "low"
+      }
+    },
+    {
       "upstream": "openai/gpt-5.6-luna",
       "tier": "ultra cheap"
     },
