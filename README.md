@@ -140,6 +140,7 @@ Then run:
 | `JEV_PROVIDER` | the gateway whose key is set | `vercel` or `openrouter`, only needed when both keys are set |
 | `LAYA_MODEL`, `LAYA_DEVICE` | `convaiinnovations/laya`, auto | The local model and where it runs |
 | `KEV_BASE_URL`, `KEV_API_KEY`, `KEV_MODEL` | unset, unset, `kev-latest` | A `kev.serve` of your own; when set it is used instead of the Space |
+| `HF_TOKEN` | unset, or the file `huggingface-cli login` writes | Sent to the demo Spaces of Kev and Laya, whose shared GPUs allow an anonymous caller only a handful of runs |
 | `KEV_ENDPOINT`, `KEV_SIZE` | Kev's demo Space, `Kev-4B` | Where Kev is asked otherwise, and which size; empty turns it off |
 | `LAYA_ENDPOINT` | Convai's demo Space | Where Laya is asked when it is not installed locally; empty turns it off |
 | `JEV_MODEL` | `typesafe-ai/jev` on Vercel, `jev-latest` on OpenRouter | Model ID, for example `jev-1.13` on OpenRouter to pin a version |

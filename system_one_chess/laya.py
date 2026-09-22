@@ -11,6 +11,7 @@ import time
 import httpx
 from pico_ioc import cleanup, component
 
+from .hf import hf_headers
 from .settings import LayaSettings
 
 NOT_INSTALLED = (
@@ -74,10 +75,12 @@ class LayaModel:
         """The Space's Gradio API: a call returns an event id, and reading the event streams the result."""
         base = self._settings.endpoint.rstrip("/")
         payload = {"data": [json.dumps(body["state"]), json.dumps(body["questions"])]}
-        submitted = await self._client.post(f"{base}/gradio_api/call/run_playground", json=payload)
+        submitted = await self._client.post(
+            f"{base}/gradio_api/call/run_playground", headers=hf_headers(), json=payload
+        )
         submitted.raise_for_status()
         event = submitted.json()["event_id"]
-        streamed = await self._client.get(f"{base}/gradio_api/call/run_playground/{event}")
+        streamed = await self._client.get(f"{base}/gradio_api/call/run_playground/{event}", headers=hf_headers())
         streamed.raise_for_status()
         data = None
         for line in streamed.text.splitlines():

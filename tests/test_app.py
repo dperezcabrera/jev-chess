@@ -1086,10 +1086,13 @@ def test_you_can_pause_your_own_clock_while_it_is_your_move(make_container, make
     assert client.delete("/api/tournament").json()["active"] is False
 
 
-def test_kev_answers_through_its_demo_space_or_a_local_server(make_container, make_client):
+def test_kev_answers_through_its_demo_space_or_a_local_server(make_container, make_client, monkeypatch):
     from system_one_chess.kev import KevModel
 
+    monkeypatch.setenv("HF_TOKEN", "hf_test")
+
     def space(request: httpx.Request) -> httpx.Response:
+        assert request.headers.get("authorization") == "Bearer hf_test", "the Space gets the Hugging Face token"
         if request.method == "POST":
             data = json.loads(request.content)["data"]
             assert json.loads(data[0])["game"] == "chess" and data[2] == "Kev-4B" and data[3] is True and data[6] == 2

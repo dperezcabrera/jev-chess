@@ -8,6 +8,7 @@ import json
 import httpx
 from pico_ioc import cleanup, component
 
+from .hf import hf_headers
 from .retry import post_with_retries
 from .settings import KevSettings
 
@@ -62,10 +63,10 @@ class KevModel:
         System One JSON and a note; the JSON is what we keep."""
         base = self._settings.endpoint.rstrip("/")
         data = [json.dumps(body["state"]), json.dumps(body["questions"]), self._settings.size, True, False, False, 2]
-        submitted = await self._client.post(f"{base}/gradio_api/call/decide", json={"data": data})
+        submitted = await self._client.post(f"{base}/gradio_api/call/decide", headers=hf_headers(), json={"data": data})
         submitted.raise_for_status()
         event = submitted.json()["event_id"]
-        streamed = await self._client.get(f"{base}/gradio_api/call/decide/{event}")
+        streamed = await self._client.get(f"{base}/gradio_api/call/decide/{event}", headers=hf_headers())
         streamed.raise_for_status()
         payload = None
         for line in streamed.text.splitlines():
