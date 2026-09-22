@@ -92,6 +92,7 @@ class Game:
                     "player": "human",
                     "san": board.san(move),
                     "seconds": seconds,
+                    "at": time.time(),
                 }
             )
             board.push(move)
@@ -236,6 +237,8 @@ class Game:
             "cost_usd": usage.cost_usd,
             "illegal": usage.illegal,
             "illegal_answers": list(usage.illegal_answers),
+            "at": time.time(),
+            "call": usage.call,
         }
 
     @staticmethod

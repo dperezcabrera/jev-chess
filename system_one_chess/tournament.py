@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import chess
+import httpx
 from pico_ioc import component
 
 from .game import Game, IllegalMove
@@ -85,6 +86,7 @@ class Tournament:
         self._participants: list[str] = []
         self._rounds_total = 0
         self._time_limit: float | None = None
+        self._models: dict[str, dict] = {}
         self._rounds = []
         self._played: set[frozenset] = set()
         self._balance: dict[str, int] = {}
@@ -124,10 +126,34 @@ class Tournament:
         self._started_at = time.time()
         self._id = f"{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(2)}"
         _claim(self._id, self)
+        await self._snapshot_models(ids)
         self._semaphore = asyncio.Semaphore(self._concurrency)
         self._lock = asyncio.Lock()
         await self._new_round()
         return await self.view()
+
+    async def _snapshot_models(self, ids: list[str]) -> None:
+        """Keeps, for the record, how each player was configured and priced when it entered: the upstream id,
+        provider, tier, reasoning setting, and OpenRouter's prices per token at that moment."""
+        known = {model.id: model for model in self._registry.list(self._credentials, self._session)}
+        prices = await _openrouter_prices()
+        tiers = {entry["upstream"]: entry["tier"] for entry in self._registry.suggested()}
+        for model_id in ids:
+            model = known.get(model_id)
+            if model is None:
+                self._models[model_id] = {"kind": "human" if model_id == HUMAN else "unknown"}
+                continue
+            entry = {
+                "kind": model.kind,
+                "upstream": model.upstream,
+                "provider": model.provider,
+                "tier": tiers.get(model.upstream, ""),
+                "joined_at": time.time(),
+            }
+            if model.kind == "llm":
+                entry["reasoning"] = self._registry.reasoning_for(model.upstream)
+                entry["pricing"] = prices.get(model.upstream)
+            self._models[model_id] = entry
 
     def saved(self) -> list[dict]:
         """The tournaments on disk, newest first: enough to pick one to resume or to look at."""
@@ -166,6 +192,7 @@ class Tournament:
         self._participants = list(data["participants"])
         self._rounds_total = data["rounds_total"]
         self._time_limit = data.get("time_limit")
+        self._models = dict(data.get("models", {}))
         self._played = {frozenset(pair) for pair in data["played"]}
         self._balance = dict(data["balance"])
         self._byes = set(data["byes"])
@@ -213,6 +240,7 @@ class Tournament:
             "participants": self._participants,
             "rounds_total": self._rounds_total,
             "time_limit": self._time_limit,
+            "models": self._models,
             "played": [sorted(pair) for pair in self._played],
             "balance": self._balance,
             "byes": sorted(self._byes),
@@ -312,6 +340,7 @@ class Tournament:
             raise IllegalMove(f"{known[not_ready[0]].name} is not ready: {known[not_ready[0]].note}")
         if len(self._participants) + len(ids) > MAX_PARTICIPANTS:
             raise IllegalMove(f"a tournament holds at most {MAX_PARTICIPANTS} players")
+        await self._snapshot_models(ids)
         async with self._lock:
             for model_id in ids:
                 self._participants.append(model_id)
@@ -513,7 +542,9 @@ class Tournament:
             "rounds_total": self._rounds_total,
             "time_limit": self._time_limit,
             "done": self.done,
-            "participants": [participant(model_id) for model_id in self._participants],
+            "participants": [
+                {**participant(model_id), **self._models.get(model_id, {})} for model_id in self._participants
+            ],
             "rounds": [
                 {
                     "round": number,
@@ -624,6 +655,25 @@ class Tournament:
             "rounds": rounds,
             "standings": self._table() if self._rounds else [],
         }
+
+
+_PRICES: dict[str, dict] = {}
+
+
+async def _openrouter_prices() -> dict[str, dict]:
+    """OpenRouter's catalogue prices per token, fetched once per process; empty when unreachable."""
+    if _PRICES:
+        return _PRICES
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get("https://openrouter.ai/api/v1/models")
+            response.raise_for_status()
+        for model in response.json().get("data", []):
+            pricing = model.get("pricing") or {}
+            _PRICES[model["id"]] = {"prompt": pricing.get("prompt"), "completion": pricing.get("completion")}
+    except (httpx.HTTPError, ValueError, KeyError):
+        return {}
+    return _PRICES
 
 
 def colour_name(color: chess.Color | None) -> str | None:

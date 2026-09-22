@@ -36,6 +36,7 @@ class Answer:
     seconds: float
     illegal: int = 0
     illegal_answers: tuple[str, ...] = ()
+    call: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -51,6 +52,7 @@ class Decision:
     seconds: float
     illegal: int = 0
     illegal_answers: tuple[str, ...] = ()
+    call: dict | None = None
 
 
 @component
@@ -211,7 +213,7 @@ class JevMoveChooser:
                 gateway, upstream, _state(board), instructions, criteria, attempts, aliases, reasoning
             )
         except IllegalAnswers as e:
-            usage = Answer("", {}, e.input_tokens, e.output_tokens, e.cost_usd, e.seconds, e.illegal, e.answers)
+            usage = Answer("", {}, e.input_tokens, e.output_tokens, e.cost_usd, e.seconds, e.illegal, e.answers, e.call)
             raise Forfeit(str(e), usage) from e
         except LLMError as e:
             raise JevError(str(e)) from e
@@ -224,6 +226,19 @@ class JevMoveChooser:
             seconds=answer.seconds,
             illegal=answer.illegal,
             illegal_answers=answer.illegal_answers,
+            call=getattr(answer, "call", None)
+            or {
+                "reply": answer.reply,
+                "finish_reason": answer.finish_reason,
+                "reasoning_chars": answer.reasoning_chars,
+                "blanks": answer.blanks,
+                "truncated": answer.truncated,
+                "schema": answer.schema,
+                "reasoning": answer.reasoning,
+                "max_tokens": answer.max_tokens,
+            }
+            if hasattr(answer, "reply")
+            else getattr(answer, "call", None),
         )
 
     async def choose(
@@ -269,4 +284,17 @@ class JevMoveChooser:
             seconds=answer.seconds,
             illegal=answer.illegal,
             illegal_answers=answer.illegal_answers,
+            call=getattr(answer, "call", None)
+            or {
+                "reply": answer.reply,
+                "finish_reason": answer.finish_reason,
+                "reasoning_chars": answer.reasoning_chars,
+                "blanks": answer.blanks,
+                "truncated": answer.truncated,
+                "schema": answer.schema,
+                "reasoning": answer.reasoning,
+                "max_tokens": answer.max_tokens,
+            }
+            if hasattr(answer, "reply")
+            else getattr(answer, "call", None),
         )

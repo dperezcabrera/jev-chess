@@ -44,6 +44,14 @@ class LLMAnswer:
     seconds: float
     illegal: int
     illegal_answers: tuple[str, ...] = ()
+    reply: str = ""
+    finish_reason: str | None = None
+    reasoning_chars: int = 0
+    blanks: int = 0
+    truncated: int = 0
+    schema: bool = False
+    reasoning: dict | None = None
+    max_tokens: int = MAX_TOKENS
 
 
 class LLMError(Exception):
@@ -62,10 +70,12 @@ class IllegalAnswers(LLMError):
         cost_usd: float,
         seconds: float,
         answers: tuple[str, ...] = (),
+        call: dict | None = None,
     ):
         super().__init__(f"{upstream} did not name a legal option after {illegal} illegal answers")
         self.illegal = illegal
         self.answers = answers
+        self.call = call
         self.input_tokens = input_tokens
         self.output_tokens = output_tokens
         self.cost_usd = cost_usd
@@ -221,6 +231,7 @@ class LLMApi:
                 continue
             attempt += 1
             if choice is not None:
+                message = response["choices"][0]["message"]
                 return LLMAnswer(
                     choice,
                     totals["input"],
@@ -229,6 +240,14 @@ class LLMApi:
                     time.perf_counter() - started,
                     attempt - 1,
                     tuple(wrong),
+                    reply=(message.get("content") or "")[:300],
+                    finish_reason=finish,
+                    reasoning_chars=len(message.get("reasoning") or message.get("reasoning_content") or ""),
+                    blanks=blanks,
+                    truncated=truncated,
+                    schema=upstream not in self._no_schema,
+                    reasoning={"effort": "low"} if truncated else (dict(reasoning) if reasoning else None),
+                    max_tokens=TRUNCATED_TOKENS if truncated else MAX_TOKENS,
                 )
             wrong.append(("[ran out of tokens while thinking] " if finish == "length" else "") + text.strip()[:200])
             messages += [
@@ -243,6 +262,16 @@ class LLMApi:
             totals["cost"],
             time.perf_counter() - started,
             tuple(wrong),
+            {
+                "reply": wrong[-1][:300] if wrong else "",
+                "finish_reason": finish,
+                "reasoning_chars": 0,
+                "blanks": blanks,
+                "truncated": truncated,
+                "schema": upstream not in self._no_schema,
+                "reasoning": {"effort": "low"} if truncated else (dict(reasoning) if reasoning else None),
+                "max_tokens": TRUNCATED_TOKENS if truncated else MAX_TOKENS,
+            },
         )
 
     @cleanup

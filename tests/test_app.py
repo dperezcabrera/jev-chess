@@ -744,7 +744,14 @@ def test_a_swiss_tournament_plays_its_boards_itself_and_waits_for_you(make_conta
     data = export.json()
     assert data["system"] == "Swiss" and data["rounds_total"] == 2 and not data["done"]
     assert [p["id"] for p in data["participants"]] == ["llm:openai/gpt-5-mini", "jev", "human"]
+    llm_entry = data["participants"][0]
+    assert llm_entry["kind"] == "llm" and llm_entry["upstream"] == "openai/gpt-5-mini" and "reasoning" in llm_entry
+    assert "pricing" in llm_entry and llm_entry["joined_at"] > 0, "how each model was configured and priced is kept"
     game = data["rounds"][0]["games"][0]
+    assert game["moves"][0]["at"] > 0 and game["moves"][0]["call"]["schema"] is True
+    assert game["moves"][0]["call"]["finish_reason"] is None or isinstance(
+        game["moves"][0]["call"]["finish_reason"], str
+    )
     assert game["board"] == 1 and game["result"] == "0-1" and game["forfeited"] == "white"
     assert (
         game["moves"][0]["player"] == "llm:openai/gpt-5-mini"

@@ -258,6 +258,14 @@ Illegal or out-of-turn moves and unknown models return `409`, malformed bodies a
 
 **Why the percentile is there.** Centipawn loss says how far a move is from perfect, not whether it beats guessing. The percentile answers that: it is the share of legal moves in the position that Stockfish scores strictly worse than the one played, with ties split evenly. A random mover sits on the 50th percentile by definition. The two are read together, because each hides something: a high percentile can still be a large loss when only one move in the position was good, and a small loss can be a low percentile when every move was fine. The metric is calibrated: in a long random-versus-random game both sides land on the 50th and 51st percentile.
 
+### Analyzing a tournament with the engine
+
+Everything a tournament records goes to `tournaments/<id>.json` and to the Data download: per participant, how it was configured and priced when it joined (upstream id, provider, tier, reasoning setting, OpenRouter's prices per token); per move, who decided, the move, the seconds it took, tokens in and out, cost, the probabilities a System One model gave, every illegal reply, and for an LLM the call itself (the raw reply, `finish_reason`, how many blank or truncated replies were retried, whether the JSON schema was used, the reasoning setting and token budget); per game, the usage per side, forfeits, pardons, time control and the PGN; and the standings with their tie-breaks. What the browser's engine analysis adds for the game you look at, `experiments/tournament_analysis/analyze.py` adds for every game of a tournament: with a Stockfish binary (`STOCKFISH`, on `PATH`, or in `.venv/bin/stockfish`) it reports per player the average centipawn loss, lichess-style accuracy, best-move rate, inaccuracies, mistakes and blunders, and the seconds and dollars per move.
+
+```sh
+.venv/bin/python experiments/tournament_analysis/analyze.py tournaments/<id>.json --depth 14 --json report.json
+```
+
 ### Experiments on how Jev decides
 
 Two experiments over 120 positions, written up with their method, data and limits in [experiments/README.md](experiments/README.md):
