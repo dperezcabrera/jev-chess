@@ -1,4 +1,4 @@
-# How good is [Jev AI](https://typesafe.ai) at chess? Try to beat it
+# How good is a [System One model](https://docs.typesafe.ai/concepts/system-one) at chess? ([Jev](https://typesafe.ai), [Laya](https://huggingface.co/convaiinnovations/laya))
 
 `jev-chess`: play chess in your browser against [Jev](https://typesafe.ai), TypeSafe AI's System One model, called through [Vercel AI Gateway](https://vercel.com/ai-gateway/models/jev) or [OpenRouter](https://openrouter.ai/typesafe).
 
@@ -44,7 +44,7 @@ If the key is already exported in your shell, pass it through without typing it:
 docker run --rm -p 127.0.0.1:8000:8000 -e AI_GATEWAY_API_KEY -e OPENROUTER_API_KEY ghcr.io/dperezcabrera/jev-chess:latest
 ```
 
-Available tags: `latest` and the version number, such as `0.3.0`.
+Available tags: `latest` and the version number, such as `0.3.1`.
 
 To build the image yourself instead:
 
@@ -248,7 +248,7 @@ gh auth token | docker login ghcr.io -u dperezcabrera --password-stdin
 Then build, tag and push:
 
 ```sh
-docker build -t ghcr.io/dperezcabrera/jev-chess:0.3.0 -t ghcr.io/dperezcabrera/jev-chess:latest .
+docker build -t ghcr.io/dperezcabrera/jev-chess:0.3.1 -t ghcr.io/dperezcabrera/jev-chess:latest .
 docker push --all-tags ghcr.io/dperezcabrera/jev-chess
 ```
 

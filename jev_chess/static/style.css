@@ -56,6 +56,8 @@ body {
 .topbar-nav ul { display: flex; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
 .brand { font-size: 1.25rem; letter-spacing: -0.01em; }
 .brand a { color: var(--accent); text-underline-offset: 4px; }
+.brand-models { font-weight: 500; color: var(--text-muted); }
+.brand-models a { color: var(--text); }
 .topbar-link { display: inline-flex; align-items: center; gap: var(--space-2); justify-content: center; min-width: 44px; min-height: 44px; padding: 0 var(--space-2); border-radius: var(--radius); color: var(--text); font-weight: 600; text-decoration: none; }
 .topbar-link:hover { background: color-mix(in srgb, var(--border) 50%, transparent); }
 

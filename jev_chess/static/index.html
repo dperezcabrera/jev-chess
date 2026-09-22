@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>How good is Jev AI at chess? Try to beat it</title>
+<title>How good is a System One model at chess? Jev, Laya and the moves they choose</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 2 2'%3E%3Crect width='2' height='2' fill='%23b58863'/%3E%3Crect width='1' height='1' fill='%23f0d9b5'/%3E%3Crect x='1' y='1' width='1' height='1' fill='%23f0d9b5'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="static/vendor/chessground/chessground.base.css">
 <link rel="stylesheet" href="static/vendor/chessground/chessground.brown.css">
@@ -13,7 +13,7 @@
 <body>
 <header class="topbar">
   <nav class="topbar-nav" aria-label="Main">
-    <h1 class="brand">How good is <a href="https://typesafe.ai" target="_blank" rel="noopener">Jev AI</a> at chess?</h1>
+    <h1 class="brand">How good is a <a href="https://docs.typesafe.ai/concepts/system-one" target="_blank" rel="noopener">System One model</a> at chess? <span class="brand-models">(<a href="https://typesafe.ai" target="_blank" rel="noopener">Jev</a>, <a href="https://huggingface.co/convaiinnovations/laya" target="_blank" rel="noopener">Laya</a>)</span></h1>
     <ul>
       <li>
         <button id="open-settings" class="topbar-link topbar-button" type="button" aria-label="Settings" title="Settings">
@@ -45,7 +45,7 @@
 
   <aside class="panel">
     <header class="panel-header">
-      <p class="subtitle"><strong>Try to beat it.</strong> Jev is TypeSafe's System One model: it picks every move as a single typed decision.</p>
+      <p class="subtitle"><strong>Try to beat it.</strong> A System One model generates no text: it picks every move as a single typed decision. Jev is TypeSafe's, Laya is the open-source one.</p>
       <p class="game-id">Game <span id="game-id">&ndash;</span></p>
     </header>
 
