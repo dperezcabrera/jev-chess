@@ -583,6 +583,9 @@ html:has(dialog[open]) { overflow: hidden; scrollbar-gutter: stable; }
 .topbar-link[hidden] { display: none; }
 .player-row { display: flex; align-items: center; gap: var(--space-2); }
 .player-row .player-bar { flex: 1; min-width: 0; }
+.board-tools { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: var(--space-2); }
+.board-tools .replay { grid-column: 2; justify-content: center; }
+.board-tools #flip-board { grid-column: 3; justify-self: end; }
 
 .wide-dialog { width: min(960px, 94vw); height: min(680px, 90vh); }
 .tournament-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0 0 var(--space-2); }
