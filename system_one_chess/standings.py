@@ -15,6 +15,16 @@ class Standings:
         self._rows: dict[str, dict] = {}
         self._recorded: set[str] = set()
 
+    def to_record(self) -> dict:
+        return {
+            "rows": {model_id: dict(row) for model_id, row in self._rows.items()},
+            "recorded": sorted(self._recorded),
+        }
+
+    def restore(self, record: dict) -> None:
+        self._rows = {model_id: {**self._empty(), **row} for model_id, row in record["rows"].items()}
+        self._recorded = set(record["recorded"])
+
     def ensure(self, model_id: str) -> None:
         self._rows.setdefault(model_id, self._empty())
 

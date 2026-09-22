@@ -128,6 +128,37 @@ class Game:
         if self._id != game_id or len(self._board.move_stack) != ply:
             raise IllegalMove("the game changed while the model was deciding")
 
+    def to_record(self) -> dict:
+        """Everything needed to rebuild this game later, in plain JSON."""
+        return {
+            "id": self._id,
+            "human": self._human,
+            "models": {"white": self._models[chess.WHITE], "black": self._models[chess.BLACK]},
+            "moves_uci": [move.uci() for move in self._board.move_stack],
+            "forfeited": self._colour_name(self._forfeited) if self._forfeited is not None else None,
+            "illegal": {"white": self._illegal[chess.WHITE], "black": self._illegal[chess.BLACK]},
+            "usage": dict(self._usage),
+            "usage_by_colour": {
+                "white": dict(self._usage_by_colour[chess.WHITE]),
+                "black": dict(self._usage_by_colour[chess.BLACK]),
+            },
+            "moves": [dict(move) for move in self._moves],
+            "jev_top": list(self._jev_top),
+        }
+
+    def restore(self, record: dict) -> None:
+        colours = {"white": chess.WHITE, "black": chess.BLACK}
+        self._reset(record["human"], record["models"]["white"], record["models"]["black"])
+        self._id = record["id"]
+        for uci in record["moves_uci"]:
+            self._board.push_uci(uci)
+        self._forfeited = colours.get(record.get("forfeited"))
+        self._illegal = {colours[name]: n for name, n in record["illegal"].items()}
+        self._usage = dict(record["usage"])
+        self._usage_by_colour = {colours[name]: dict(u) for name, u in record["usage_by_colour"].items()}
+        self._moves = [dict(move) for move in record["moves"]]
+        self._jev_top = list(record.get("jev_top", []))
+
     def _players(self) -> dict[chess.Color, str]:
         """Who sat at each colour for the rankings: a model id, or `human` for the seat the browser played."""
         return {

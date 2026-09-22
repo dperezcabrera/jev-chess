@@ -5,8 +5,12 @@ time up to `TOURNAMENT_CONCURRENCY`, while a game with you waits for your moves;
 is over the next round is paired. With an odd number of players one gets a bye."""
 
 import asyncio
+import json
+import os
+import secrets
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 
 import chess
 from pico_ioc import component
@@ -61,10 +65,12 @@ class Tournament:
         self._session = session
         self._session_standings = standings
         self._concurrency = max(1, settings.concurrency)
+        self._dir = Path(settings.dir)
         self._rounds: list[dict] = []
         self._reset()
 
     def _reset(self) -> None:
+        self._id = ""
         self._participants: list[str] = []
         self._rounds_total = 0
         self._rounds = []
@@ -102,10 +108,122 @@ class Tournament:
         for player in ids:
             self._standings.ensure(player)
         self._started_at = time.time()
+        self._id = f"{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(2)}"
         self._semaphore = asyncio.Semaphore(self._concurrency)
         self._lock = asyncio.Lock()
         await self._new_round()
         return await self.view()
+
+    def saved(self) -> list[dict]:
+        """The tournaments on disk, newest first: enough to pick one to resume or to look at."""
+        entries = []
+        for path in sorted(self._dir.glob("*.json"), reverse=True):
+            try:
+                data = json.loads(path.read_text())
+            except (OSError, ValueError):
+                continue
+            rounds = data.get("rounds", [])
+            last = rounds[-1]["pairings"] if rounds else []
+            done = len(rounds) >= data.get("rounds_total", 0) and all(e["result"] is not None for e in last)
+            entries.append(
+                {
+                    "id": data["id"],
+                    "started_at": datetime.fromtimestamp(data["started_at"], UTC).isoformat(timespec="seconds"),
+                    "participants": [self._registry.name_of(p) for p in data.get("participants", [])],
+                    "round": len(rounds),
+                    "rounds_total": data.get("rounds_total", 0),
+                    "done": done,
+                    "finished_games": sum(1 for r in rounds for e in r["pairings"] if e["result"] is not None),
+                    "current": data["id"] == self._id,
+                }
+            )
+        return entries
+
+    async def resume(self, tournament_id: str) -> dict:
+        """Loads a saved tournament into this session and plays on from where it stopped."""
+        path = self._dir / f"{tournament_id}.json"
+        if not path.is_file() or not tournament_id.replace("-", "").isalnum():
+            raise IllegalMove(f"no saved tournament {tournament_id!r}")
+        data = json.loads(path.read_text())
+        self.stop()
+        self._id = data["id"]
+        self._participants = list(data["participants"])
+        self._rounds_total = data["rounds_total"]
+        self._played = {frozenset(pair) for pair in data["played"]}
+        self._balance = dict(data["balance"])
+        self._byes = set(data["byes"])
+        self._opponents = {k: list(v) for k, v in data["opponents"].items()}
+        self._scores = {k: [(o, float(e)) for o, e in v] for k, v in data["scores"].items()}
+        self._standings.restore(data["standings"])
+        self._started_at = time.time() - data.get("elapsed", 0.0)
+        self._semaphore = asyncio.Semaphore(self._concurrency)
+        self._lock = asyncio.Lock()
+        for round_ in data["rounds"]:
+            boards = []
+            for saved in round_["pairings"]:
+                game = Game(self._chooser, self._credentials, self._registry, self._session, self._session_standings)
+                game.restore(saved["game"])
+                boards.append(
+                    {
+                        "white": saved["white"],
+                        "black": saved["black"],
+                        "game": game,
+                        "game_id": saved["game"]["id"],
+                        "result": saved["result"],
+                        "pgn": saved.get("pgn", ""),
+                        "record": saved.get("record"),
+                        "error": None,
+                        "event": asyncio.Event(),
+                        "thinking_since": None,
+                        "task": None,
+                    }
+                )
+            self._rounds.append({"pairings": boards, "bye": round_["bye"]})
+        if self._rounds:
+            for entry in self._rounds[-1]["pairings"]:
+                if entry["result"] is None:
+                    entry["task"] = asyncio.create_task(self._run_board(entry))
+        return await self.view()
+
+    def _save(self) -> None:
+        """Writes the whole tournament to its file, atomically, so a restart loses nothing."""
+        if not self._id:
+            return
+        data = {
+            "id": self._id,
+            "started_at": self._started_at,
+            "elapsed": time.time() - self._started_at if self._started_at else 0.0,
+            "participants": self._participants,
+            "rounds_total": self._rounds_total,
+            "played": [sorted(pair) for pair in self._played],
+            "balance": self._balance,
+            "byes": sorted(self._byes),
+            "opponents": self._opponents,
+            "scores": self._scores,
+            "standings": self._standings.to_record(),
+            "rounds": [
+                {
+                    "bye": round_["bye"],
+                    "pairings": [
+                        {
+                            "white": entry["white"],
+                            "black": entry["black"],
+                            "result": entry["result"],
+                            "pgn": entry["pgn"],
+                            "record": entry["record"],
+                            "game": entry["game"].to_record(),
+                        }
+                        for entry in round_["pairings"]
+                    ],
+                }
+                for round_ in self._rounds
+            ],
+        }
+        self._dir.mkdir(parents=True, exist_ok=True)
+        path = self._dir / f"{self._id}.json"
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(data))
+        os.replace(tmp, path)
 
     def stop(self) -> None:
         for round_ in self._rounds:
@@ -126,23 +244,27 @@ class Tournament:
             and all(entry["result"] is not None for entry in self._rounds[-1]["pairings"])
         )
 
-    def _board(self, number: int) -> dict:
+    def _board(self, number: int, round_number: int | None = None) -> dict:
+        """Board `number` of a round, the current one unless `round_number` says otherwise."""
         if not self._rounds:
             raise IllegalMove("no tournament is running")
-        boards = self._rounds[-1]["pairings"]
+        if round_number is not None and not 1 <= round_number <= len(self._rounds):
+            raise IllegalMove(f"round {round_number} has not been played")
+        boards = self._rounds[(round_number or len(self._rounds)) - 1]["pairings"]
         if not 1 <= number <= len(boards):
-            raise IllegalMove(f"board {number} is not in this round")
+            raise IllegalMove(f"board {number} is not in that round")
         return boards[number - 1]
 
-    async def board_state(self, number: int) -> dict:
-        return await self._board(number)["game"].snapshot()
+    async def board_state(self, number: int, round_number: int | None = None) -> dict:
+        return await self._board(number, round_number)["game"].snapshot()
 
-    async def board_pgn(self, number: int) -> tuple[str, str]:
-        return await self._board(number)["game"].pgn()
+    async def board_pgn(self, number: int, round_number: int | None = None) -> tuple[str, str]:
+        return await self._board(number, round_number)["game"].pgn()
 
     async def human_move(self, number: int, origin: str, target: str, promotion: str = "q") -> dict:
         entry = self._board(number)
         state = await entry["game"].human_move(origin, target, promotion)
+        self._save()
         entry["event"].set()
         return state
 
@@ -186,6 +308,7 @@ class Tournament:
             self._byes.add(bye)
             self._standings.bye(bye)
         self._rounds.append({"pairings": boards, "bye": bye})
+        self._save()
         for entry in boards:
             entry["task"] = asyncio.create_task(self._run_board(entry))
 
@@ -207,6 +330,7 @@ class Tournament:
                         await game.jev_move()
                     finally:
                         entry["thinking_since"] = None
+                self._save()
         except (JevError, IllegalMove) as error:
             entry["error"] = str(error)
             return
@@ -243,6 +367,7 @@ class Tournament:
             self._scores[entry["white"]].append((entry["black"], white_points))
             self._scores[entry["black"]].append((entry["white"], black_points))
             current = self._rounds[-1]
+            self._save()
             if all(e["result"] is not None for e in current["pairings"]) and len(self._rounds) < self._rounds_total:
                 await self._new_round()
 
@@ -264,6 +389,7 @@ class Tournament:
 
         return {
             "format": "system-one-chess tournament",
+            "id": self._id,
             "exported_at": datetime.now(UTC).isoformat(timespec="seconds"),
             "system": "Swiss",
             "rounds_total": self._rounds_total,
@@ -354,6 +480,7 @@ class Tournament:
         current = rounds[-1]["pairings"] if rounds else []
         human_board = next((b["board"] for b in current if b["human"] != "none"), None)
         return {
+            "id": self._id,
             "active": self.active,
             "done": self.done,
             "rounds_total": self._rounds_total,

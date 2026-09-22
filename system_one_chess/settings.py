@@ -44,6 +44,7 @@ class IllegalMovesSettings:
 @dataclass
 class TournamentSettings:
     concurrency: int = 3
+    dir: str = "tournaments"
 
 
 @configured(prefix="MODELS_", mapping="flat")

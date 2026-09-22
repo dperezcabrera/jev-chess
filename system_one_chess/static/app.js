@@ -8,9 +8,11 @@ const DECISION_ROWS = 3;
 let generation = 0;
 let currentHuman = 'white';
 let selectedBoard = null;
-const stateUrl = () => (selectedBoard ? `/api/tournament/board/${selectedBoard}` : '/api/state');
+let selectedRound = null;
+const roundQuery = () => (selectedRound ? `?round=${selectedRound}` : '');
+const stateUrl = () => (selectedBoard ? `/api/tournament/board/${selectedBoard}${roundQuery()}` : '/api/state');
 const moveUrl = () => (selectedBoard ? `/api/tournament/board/${selectedBoard}/move` : '/api/move');
-const pgnUrl = () => (selectedBoard ? `api/tournament/board/${selectedBoard}/pgn` : 'api/pgn');
+const pgnUrl = () => (selectedBoard ? `api/tournament/board/${selectedBoard}/pgn${roundQuery()}` : 'api/pgn');
 let current = null;
 let analysis = { gameId: null, done: '', glyphs: [], abort: null };
 
@@ -588,13 +590,19 @@ function renderRoundsDialog(view) {
     const list = Object.assign(document.createElement('ol'), { className: 'boards' });
     round.pairings.forEach((pairing, index) => {
       const li = document.createElement('li');
-      if (view.active && roundIndex === view.round - 1 && index === view.game - 1) li.classList.add('current');
-      li.append(
+      const open = Object.assign(document.createElement('button'), { className: 'board-open', type: 'button', title: 'Open this game on the board' });
+      open.setAttribute('aria-label', `Open round ${roundIndex + 1} board ${index + 1}, ${pairing.white.name} against ${pairing.black.name}`);
+      open.append(
         Object.assign(document.createElement('span'), { className: 'board-number', textContent: `${index + 1}.` }),
         boardNode(pairing, 'white', 'board-white'),
         Object.assign(document.createElement('span'), { className: 'board-result', textContent: pairing.result || '\u2013' }),
         boardNode(pairing, 'black', 'board-black'),
       );
+      open.addEventListener('click', async () => {
+        $('rounds-dialog').close();
+        await selectGame(roundIndex + 1, index + 1);
+      });
+      li.append(open);
       list.append(li);
     });
     if (round.bye) {
@@ -703,8 +711,8 @@ function miniNode(board, view) {
   const text = board.error ? 'stopped, click to retry' : board.over ? board.result : board.humans_turn ? 'your move' : `move ${Math.floor(board.ply / 2) + 1}, ${board[board.turn].name} thinking`;
   mini.status.textContent = text;
   mini.status.className = `mini-status${board.error ? ' is-error' : board.humans_turn ? ' is-yours' : board.over ? ' is-over' : ''}`;
-  mini.root.classList.toggle('selected', board.board === selectedBoard);
-  mini.root.setAttribute('aria-pressed', String(board.board === selectedBoard));
+  mini.root.classList.toggle('selected', board.board === selectedBoard && !selectedRound);
+  mini.root.setAttribute('aria-pressed', String(board.board === selectedBoard && !selectedRound));
   mini.root.setAttribute('aria-label', `Board ${board.board}: ${board.white.name} against ${board.black.name}, ${text}`);
   return mini.root;
 }
@@ -723,7 +731,16 @@ function renderBoards(view) {
   }
 }
 
+async function selectGame(roundNumber, number) {
+  selectedRound = tournament && roundNumber === tournament.round ? null : roundNumber;
+  selectedBoard = number;
+  await refresh();
+  if (tournament) renderBoards(tournament);
+  setStatus(`Round ${roundNumber}, board ${number}: ${current ? `game over: ${current.result}` : ''}`);
+}
+
 async function selectBoard(number) {
+  selectedRound = null;
   if (selectedBoard === number) {
     const board = tournament && tournament.rounds.length ? tournament.rounds[tournament.rounds.length - 1].pairings[number - 1] : null;
     if (board && board.error) await api(`/api/tournament/board/${number}/retry`, {});
@@ -742,9 +759,9 @@ async function pollTournament() {
     renderTournament(view);
     if (view.rounds.length) {
       const boards = view.rounds[view.rounds.length - 1].pairings;
-      if (view.round !== previousRound || !selectedBoard || selectedBoard > boards.length) selectedBoard = view.human_board || 1;
-      const board = boards[selectedBoard - 1];
-      thinkingSince = board.thinking_since ? Date.now() - Math.max(0, view.now - board.thinking_since) * 1000 : null;
+      if (!selectedRound && (view.round !== previousRound || !selectedBoard || selectedBoard > boards.length)) selectedBoard = view.human_board || 1;
+      const board = selectedRound ? null : boards[selectedBoard - 1];
+      thinkingSince = board && board.thinking_since ? Date.now() - Math.max(0, view.now - board.thinking_since) * 1000 : null;
       const state = await api(stateUrl());
       if (!current || current.game_id !== state.game_id || current.history.length !== state.history.length || current.over !== state.over) render(state);
       else tickClocks();
@@ -799,10 +816,47 @@ function syncTournamentDialog() {
   $('tournament-hint').textContent = players < 2 ? 'Pick at least two players' : `${players} players, ${rounds} round${rounds === 1 ? '' : 's'}, ${games} game${games === 1 ? '' : 's'}${players % 2 ? ', one bye per round' : ''}`;
 }
 
+async function resumeTournament(id) {
+  const turn = ++generation;
+  try {
+    const view = await api(`/api/tournaments/${id}/resume`, {});
+    tournamentDialog.close();
+    selectedBoard = view.human_board || 1;
+    renderTournament(view);
+    clearTimeout(pollTimer);
+    if (turn === generation) await pollTournament();
+  } catch (error) {
+    $('tournament-error').textContent = error.message;
+  }
+}
+
+async function loadSaved() {
+  const section = $('saved-section');
+  const list = $('saved-list');
+  try {
+    const { tournaments } = await api('/api/tournaments');
+    list.replaceChildren(...tournaments.map((entry) => {
+      const li = document.createElement('li');
+      const text = Object.assign(document.createElement('span'), { className: 'saved-text' });
+      const when = new Date(entry.started_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+      const progress = entry.done ? `finished, ${entry.finished_games} games` : `round ${entry.round} of ${entry.rounds_total}, ${entry.finished_games} game${entry.finished_games === 1 ? '' : 's'} played`;
+      text.append(Object.assign(document.createElement('strong'), { textContent: entry.participants.join(', ') }), Object.assign(document.createElement('small'), { textContent: `${when} \u00b7 ${progress}${entry.current ? ' \u00b7 open now' : ''}` }));
+      const button = Object.assign(document.createElement('button'), { className: 'button button-ghost button-small', type: 'button', textContent: entry.current ? 'Open' : entry.done ? 'Review' : 'Resume' });
+      button.addEventListener('click', () => (entry.current ? tournamentDialog.close() : resumeTournament(entry.id)));
+      li.append(text, button);
+      return li;
+    }));
+    section.hidden = tournaments.length === 0;
+  } catch (error) {
+    section.hidden = true;
+  }
+}
+
 function openTournamentDialog() {
   $('tournament-error').textContent = '';
   renderParticipants();
   loadModels();
+  loadSaved();
   tournamentDialog.showModal();
 }
 

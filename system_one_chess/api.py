@@ -157,8 +157,8 @@ class TournamentController:
         return await self._tournament.start(body.participants, body.human, body.rounds)
 
     @get("/board/{number}")
-    async def board(self, number: int):
-        return await self._tournament.board_state(number)
+    async def board(self, number: int, round: int | None = None):
+        return await self._tournament.board_state(number, round)
 
     @post("/board/{number}/move")
     async def move(self, number: int, body: MoveRequest):
@@ -170,8 +170,8 @@ class TournamentController:
         return await self._tournament.view()
 
     @get("/board/{number}/pgn")
-    async def board_pgn(self, number: int):
-        filename, text = await self._tournament.board_pgn(number)
+    async def board_pgn(self, number: int, round: int | None = None):
+        filename, text = await self._tournament.board_pgn(number, round)
         headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
         return Response(text, media_type="application/x-chess-pgn", headers=headers)
 
@@ -189,6 +189,20 @@ class TournamentController:
     async def stop(self):
         self._tournament.stop()
         return await self._tournament.view()
+
+
+@controller(prefix="/api/tournaments")
+class SavedTournamentsController:
+    def __init__(self, tournament: Tournament):
+        self._tournament = tournament
+
+    @get("")
+    async def list_saved(self):
+        return {"tournaments": self._tournament.saved()}
+
+    @post("/{tournament_id}/resume")
+    async def resume(self, tournament_id: str):
+        return await self._tournament.resume(tournament_id)
 
 
 @controller(prefix="/api/standings")

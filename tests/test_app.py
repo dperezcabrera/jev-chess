@@ -682,6 +682,14 @@ def test_a_swiss_tournament_plays_its_boards_itself_and_waits_for_you(make_conta
     assert client.get("/api/tournament/board/2").status_code == 409
     pgn = client.get("/api/tournament/board/1/pgn")
     assert pgn.status_code == 200 and '[Event "system-one-chess"]' in pgn.text
+    earlier = client.get("/api/tournament/board/1?round=1").json()
+    assert (
+        earlier["over"]
+        and earlier["result"] == "0-1 by illegal moves"
+        and earlier["models"]["white"] == "llm:openai/gpt-5-mini"
+    )
+    assert client.get("/api/tournament/board/1?round=3").status_code == 409
+    assert '[Result "0-1"]' in client.get("/api/tournament/board/1/pgn?round=1").text
 
     pgn = client.get("/api/tournament/pgn")
     assert pgn.headers["content-disposition"].endswith('.pgn"') and pgn.text.count("[Event ") == 1
@@ -748,3 +756,46 @@ def test_the_state_stays_readable_while_a_model_thinks(make_container, make_clie
     thinking = view["rounds"][0]["pairings"][0]
     assert thinking["thinking_since"] is not None and not board["over"]
     assert client.delete("/api/tournament").json()["active"] is False
+
+
+def test_a_tournament_is_saved_after_every_move_and_can_be_resumed_by_a_new_server(
+    make_container, make_client, tmp_path
+):
+    saved_dir = tmp_path / "saved"
+    replies = ["nothing", "still nothing"] * 6
+    client = llm_app(make_container, make_client, replies, [], TOURNAMENT_DIR=str(saved_dir))
+    client.post("/api/models", json={"upstream": "openai/gpt-5-mini"})
+    body = {"participants": ["llm:openai/gpt-5-mini", "jev"], "human": True, "rounds": 2}
+    view = client.post("/api/tournament", json=body).json()
+    tournament_id = view["id"]
+    assert (saved_dir / f"{tournament_id}.json").is_file()
+    view = until(lambda: (v := client.get("/api/tournament").json()) and v["round"] == 2 and v)
+    state = until(lambda: (s := client.get("/api/tournament/board/1").json()) and s["humans_turn"] and s)
+    origin, target = ("e2", "e4") if state["human"] == "white" else ("e7", "e5")
+    moved = client.post("/api/tournament/board/1/move", json={"from": origin, "to": target}).json()
+    until(lambda: (s := client.get("/api/tournament/board/1").json()) and s["humans_turn"] and s)
+    listed = client.get("/api/tournaments").json()["tournaments"]
+    assert [t["id"] for t in listed] == [tournament_id] and listed[0]["current"] and not listed[0]["done"]
+    assert listed[0]["round"] == 2 and listed[0]["finished_games"] == 1 and "You" in listed[0]["participants"]
+
+    fresh = llm_app(make_container, make_client, ["nothing", "still nothing"] * 6, [], TOURNAMENT_DIR=str(saved_dir))
+    fresh.post("/api/models", json={"upstream": "openai/gpt-5-mini"})
+    assert fresh.get("/api/tournament").json()["active"] is False
+    assert fresh.post("/api/tournaments/nope/resume").status_code == 409
+    resumed = fresh.post(f"/api/tournaments/{tournament_id}/resume").json()
+    assert resumed["id"] == tournament_id and resumed["active"] and resumed["round"] == 2
+    assert resumed["rounds"][0]["pairings"][0]["result"] == "0-1" and resumed["finished_games"] == 1
+    rows = {row["id"]: row for row in resumed["standings"]}
+    assert (
+        rows["jev"]["points"] == 1.0 and rows["human"]["byes"] == 1 and rows["llm:openai/gpt-5-mini"]["forfeits"] == 1
+    )
+    board = fresh.get("/api/tournament/board/1").json()
+    assert len(board["history"]) >= len(moved["history"]) and board["humans_turn"], (
+        "the position and your turn came back"
+    )
+    assert '[Round "1.1"]' in fresh.get("/api/tournament/pgn").text
+    assert fresh.get("/api/tournament/export").json()["id"] == tournament_id
+    origin, target = ("g1", "f3") if board["human"] == "white" else ("g8", "f6")
+    if board["human"] == "white" and "Nf3" not in [m for m in board["history"]]:
+        pass
+    assert fresh.delete("/api/tournament").json()["active"] is False
