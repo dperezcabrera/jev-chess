@@ -13,7 +13,7 @@ from pico_ioc import cleanup, component
 
 from . import laya as local_model
 from .provider import JevProvider, SessionCredentials
-from .settings import ModelsSettings
+from .settings import LLMSettings, ModelsSettings
 
 LLM_LIMIT = 12
 LLM_PREFIX = "llm:"
@@ -39,8 +39,17 @@ def read_models_file(path: Path) -> dict:
         raise ValueError(f'{path} must hold "suggested": a list of {{"upstream": "vendor/model", "tier": "..."}}')
     if not isinstance(logos, dict) or not all(isinstance(url, str) for url in logos.values()):
         raise ValueError(f'{path} must hold "logos": an object mapping a vendor or model id to an image URL')
+    for entry in entries:
+        if entry.get("reasoning") is not None and not isinstance(entry["reasoning"], dict):
+            raise ValueError(
+                f'{path}: "reasoning" must be an object such as {{"effort": "low"}} or {{"max_tokens": 2000}}'
+            )
     return {
-        "suggested": [{"upstream": str(e["upstream"]), "tier": str(e.get("tier", ""))} for e in entries],
+        "suggested": [
+            {"upstream": str(e["upstream"]), "tier": str(e.get("tier", ""))}
+            | ({"reasoning": dict(e["reasoning"])} if e.get("reasoning") else {})
+            for e in entries
+        ],
         "logos": {str(key): url for key, url in logos.items()},
     }
 
@@ -102,9 +111,18 @@ def llm_name(upstream: str) -> str:
 
 @component
 class ModelRegistry:
-    def __init__(self, provider: JevProvider, settings: ModelsSettings):
+    def __init__(self, provider: JevProvider, settings: ModelsSettings, llm: LLMSettings):
         self._provider = provider
         self._file = Path(settings.file) if settings.file else DEFAULT_MODELS_FILE
+        self._default_reasoning = {"effort": llm.reasoning_effort} if llm.reasoning_effort else None
+
+    def reasoning_for(self, upstream: str) -> dict | None:
+        """OpenRouter's `reasoning` parameter for a model: its own entry in the models file, else the
+        LLM_REASONING_EFFORT default, else nothing, which leaves the model's own default."""
+        for entry in read_models_file(self._file)["suggested"]:
+            if entry["upstream"] == upstream and entry.get("reasoning"):
+                return dict(entry["reasoning"])
+        return dict(self._default_reasoning) if self._default_reasoning else None
 
     def suggested(self) -> list[dict]:
         return read_models_file(self._file)["suggested"]

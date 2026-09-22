@@ -8,6 +8,7 @@ from pico_ioc import cleanup, component
 
 from .laya import LayaModel
 from .llm import IllegalAnswers, LLMApi, LLMError
+from .models import ModelRegistry
 from .provider import NO_KEY, Gateway, JevProvider, SessionCredentials
 from .retry import post_with_retries
 from .settings import IllegalMovesSettings
@@ -131,12 +132,21 @@ def _state(board: chess.Board) -> dict:
 
 @component
 class JevMoveChooser:
-    def __init__(self, api: JevApi, provider: JevProvider, laya: LayaModel, llm: LLMApi, illegal: IllegalMovesSettings):
+    def __init__(
+        self,
+        api: JevApi,
+        provider: JevProvider,
+        laya: LayaModel,
+        llm: LLMApi,
+        illegal: IllegalMovesSettings,
+        registry: ModelRegistry | None = None,
+    ):
         self._api = api
         self._provider = provider
         self._laya = laya
         self._llm = llm
         self._illegal_limit = max(1, illegal.limit)
+        self._registry = registry
 
     def model_for(self, credentials: SessionCredentials | None = None, model: str = "") -> str:
         if model.startswith("llm:"):
@@ -196,7 +206,10 @@ class JevMoveChooser:
             raise JevError("An LLM needs an OpenRouter key. Add one in Settings (the gear icon).")
         attempts = self._illegal_limit - illegal_so_far
         try:
-            answer = await self._llm.choose(gateway, upstream, _state(board), instructions, criteria, attempts, aliases)
+            reasoning = self._registry.reasoning_for(upstream) if self._registry else None
+            answer = await self._llm.choose(
+                gateway, upstream, _state(board), instructions, criteria, attempts, aliases, reasoning
+            )
         except IllegalAnswers as e:
             usage = Answer("", {}, e.input_tokens, e.output_tokens, e.cost_usd, e.seconds, e.illegal, e.answers)
             raise Forfeit(str(e), usage) from e

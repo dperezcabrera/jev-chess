@@ -119,6 +119,16 @@
       <h2 id="tournament-title">Tournament</h2>
       <p id="tournament-status" class="tournament-status">No tournament yet</p>
       <progress id="tournament-progress" class="tournament-progress" value="0" max="1" aria-label="Tournament progress"></progress>
+      <div class="round-nav" role="group" aria-label="Round shown on the boards">
+        <button id="round-prev" class="icon-button icon-button-outline" type="button" aria-label="Previous round" title="Previous round (Page Up)">
+          <svg viewBox="0 0 24 24" width="1.25em" height="1.25em" fill="currentColor" aria-hidden="true"><path d="M15.4 7.4 14 6l-6 6 6 6 1.4-1.4L10.8 12z"/></svg>
+        </button>
+        <span id="round-label" class="round-label">Round 1</span>
+        <button id="round-next" class="icon-button icon-button-outline" type="button" aria-label="Next round" title="Next round (Page Down)">
+          <svg viewBox="0 0 24 24" width="1.25em" height="1.25em" fill="currentColor" aria-hidden="true"><path d="M8.6 16.6 10 18l6-6-6-6-1.4 1.4 4.6 4.6z"/></svg>
+        </button>
+      </div>
+      <p id="round-stats" class="round-stats"></p>
       <ol id="tournament-top" class="top-list" aria-label="Standings"></ol>
       <div class="tournament-actions">
         <button id="open-standings" class="button button-ghost button-small" type="button">

@@ -399,7 +399,14 @@ def llm_stub(replies, seen):
 
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
-        seen.append({"url": str(request.url), "model": body["model"], "messages": body["messages"]})
+        seen.append(
+            {
+                "url": str(request.url),
+                "model": body["model"],
+                "messages": body["messages"],
+                "reasoning": body.get("reasoning"),
+            }
+        )
         reply = replies.pop(0)
         labels = json.loads(body["messages"][1]["content"].split("Legal labels:\n")[1].split("\n\n")[0])
         text = reply(labels) if callable(reply) else reply
@@ -448,6 +455,11 @@ def test_models_are_listed_and_llms_are_added_per_session(make_container, make_c
         "logo": "/api/logos/openai",
         "removable": True,
     }
+    from system_one_chess.models import ModelRegistry
+
+    registry = llm_app.container.get(ModelRegistry)
+    assert registry.reasoning_for("z-ai/glm-5.3") == {"effort": "low"}, "the models file caps the heavy thinkers"
+    assert registry.reasoning_for("openai/gpt-5.6-luna") is None, "no entry: the model's own default"
     assert client.post("/api/models", json={"upstream": "not an id"}).status_code == 422
     assert client.delete("/api/models/openai/gpt-5-mini").json()["models"][-1]["id"] != "llm:openai/gpt-5-mini"
     assert client.delete("/api/models/x-ai/grok-4.7").json()["models"][-1]["upstream"] == "google/gemma-4-31b-it", (
@@ -457,7 +469,13 @@ def test_models_are_listed_and_llms_are_added_per_session(make_container, make_c
 
 def test_an_llm_plays_a_colour_through_the_chat_api_and_its_cost_is_counted(make_container, make_client):
     seen = []
-    client = llm_app(make_container, make_client, ['{"choice": "e5"}', "I think Nf6 is best here"], seen)
+    client = llm_app(
+        make_container,
+        make_client,
+        ['{"choice": "e5"}', "I think Nf6 is best here"],
+        seen,
+        LLM_REASONING_EFFORT="medium",
+    )
     client.post("/api/models", json={"upstream": "openai/gpt-5-mini"})
     state = client.post("/api/new", json={"human": "white", "black": "llm:openai/gpt-5-mini"}).json()
     assert state["models"]["black"] == "llm:openai/gpt-5-mini"
@@ -484,6 +502,7 @@ def test_an_llm_plays_a_colour_through_the_chat_api_and_its_cost_is_counted(make
     )
     request = seen[0]
     assert request["url"].endswith("/v1/chat/completions") and request["model"] == "openai/gpt-5-mini"
+    assert request["reasoning"] == {"effort": "medium"}, "LLM_REASONING_EFFORT applies to a model without its own entry"
     assert '"choice"' in request["messages"][0]["content"] and "- e5" in request["messages"][1]["content"]
 
     client.post("/api/move", json={"from": "g1", "to": "f3"})

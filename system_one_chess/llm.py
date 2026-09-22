@@ -134,12 +134,21 @@ class LLMApi:
         self._no_schema: set[str] = set()
 
     async def complete(
-        self, gateway: Gateway, upstream: str, messages: list[dict], labels: list[str], brief: bool = False
+        self,
+        gateway: Gateway,
+        upstream: str,
+        messages: list[dict],
+        labels: list[str],
+        brief: bool = False,
+        reasoning: dict | None = None,
     ) -> dict:
         """One chat completion, with a JSON schema that only admits the labels; a model that rejects the
-        schema (HTTP 400) is asked again without it and remembered. `brief` gives a thinking model a much
-        larger token budget and asks for little reasoning, for when it ran out of tokens while thinking."""
+        schema (HTTP 400) is asked again without it and remembered. `reasoning` is OpenRouter's parameter
+        for how much a thinking model may think; `brief` overrides it with a much larger token budget and
+        little reasoning, for when the model ran out of tokens while thinking."""
         body = {"model": upstream, "messages": messages, "max_tokens": MAX_TOKENS, "temperature": 0}
+        if reasoning:
+            body["reasoning"] = dict(reasoning)
         if brief:
             body["max_tokens"] = TRUNCATED_TOKENS
             body["reasoning"] = {"effort": "low"}
@@ -171,6 +180,7 @@ class LLMApi:
         criteria: dict,
         attempts: int = 2,
         aliases: dict[str, str] | None = None,
+        reasoning: dict | None = None,
     ) -> LLMAnswer:
         """`attempts` is how many replies the model gets; every one that names no label is an illegal answer."""
         labels = list(criteria)
@@ -186,7 +196,9 @@ class LLMApi:
         attempt = 0
         while attempt < max(1, attempts):
             try:
-                response = await self.complete(gateway, upstream, messages, labels, brief=truncated > 0)
+                response = await self.complete(
+                    gateway, upstream, messages, labels, brief=truncated > 0, reasoning=reasoning
+                )
                 text = reply_text(response)
                 finish = response["choices"][0].get("finish_reason")
             except httpx.HTTPStatusError as e:

@@ -34,6 +34,12 @@ class JevSettings:
     model: str = ""
 
 
+@configured(prefix="LLM_", mapping="flat")
+@dataclass
+class LLMSettings:
+    reasoning_effort: str = ""
+
+
 @configured(prefix="ILLEGAL_MOVES_", mapping="flat")
 @dataclass
 class IllegalMovesSettings:

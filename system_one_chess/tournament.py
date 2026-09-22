@@ -504,6 +504,7 @@ class Tournament:
                 "human": state["human"],
                 "humans_turn": state["humans_turn"],
                 "clock": {"white": usage["white"]["seconds"], "black": usage["black"]["seconds"]},
+                "cost": usage["white"]["cost_usd"] + usage["black"]["cost_usd"],
                 "thinking_seconds": state["thinking_seconds"],
                 "thinking_since": entry["thinking_since"],
                 "forfeited": entry["result"] is not None and (state["result"] or "").endswith("illegal moves"),

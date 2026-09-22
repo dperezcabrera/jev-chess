@@ -795,8 +795,9 @@ async function loadTournament() {
 const minis = new Map();
 let pollTimer = null;
 
-function miniNode(board, view) {
-  let mini = minis.get(board.board);
+function miniNode(board, view, roundNumber) {
+  const key = `${roundNumber}:${board.board}`;
+  let mini = minis.get(key);
   if (!mini) {
     const root = Object.assign(document.createElement('button'), { className: 'mini', type: 'button' });
     const boardEl = Object.assign(document.createElement('div'), { className: 'mini-board' });
@@ -806,8 +807,8 @@ function miniNode(board, view) {
     root.append(top, boardEl, bottom, status);
     const ground = Chessground(boardEl, { fen: board.fen, viewOnly: true, coordinates: false, animation: { enabled: false }, drawable: { enabled: false } });
     mini = { root, ground, top, bottom, status };
-    root.addEventListener('click', () => selectBoard(board.board));
-    minis.set(board.board, mini);
+    root.addEventListener('click', () => (roundNumber === tournament.rounds.length ? selectBoard(board.board) : selectGame(roundNumber, board.board)));
+    minis.set(key, mini);
   }
   const orientation = board.human === 'black' ? 'black' : 'white';
   if (mini.fen !== board.fen || mini.orientation !== orientation) {
@@ -834,28 +835,76 @@ function miniNode(board, view) {
   const text = board.error ? 'stopped, click to retry' : board.over ? (board.forfeited ? `${board.result} by illegal moves, click to let it continue` : board.result) : board.humans_turn ? 'your move' : `move ${Math.floor(board.ply / 2) + 1}, ${board[board.turn].name} thinking`;
   if (mini.status.textContent !== text) mini.status.textContent = text;
   mini.status.className = `mini-status${board.error ? ' is-error' : board.humans_turn ? ' is-yours' : board.over ? ' is-over' : ''}`;
-  mini.root.classList.toggle('selected', board.board === selectedBoard && !selectedRound);
-  mini.root.setAttribute('aria-pressed', String(board.board === selectedBoard && !selectedRound));
+  const isSelected = board.board === selectedBoard && (selectedRound ? selectedRound === roundNumber : roundNumber === tournament.rounds.length);
+  mini.root.classList.toggle('selected', isSelected);
+  mini.root.setAttribute('aria-pressed', String(isSelected));
   mini.root.setAttribute('aria-label', `Board ${board.board}: ${board.white.name} against ${board.black.name}, ${text}`);
   return mini.root;
 }
 
+let viewedRound = null;
+
+const shownRound = (view) => (viewedRound && viewedRound <= view.rounds.length ? viewedRound : view.rounds.length);
+
+function renderRoundNav(view) {
+  const total = view.rounds.length;
+  const shown = shownRound(view);
+  $('round-label').textContent = total ? `Round ${shown} of ${view.rounds_total}${shown === total && view.active ? ' \u00b7 live' : ''}` : 'No round yet';
+  $('round-prev').disabled = shown <= 1;
+  $('round-next').disabled = shown >= total;
+  const round = view.rounds[shown - 1];
+  if (!round) {
+    $('round-stats').textContent = '';
+    return;
+  }
+  const boards = round.pairings;
+  const finished = boards.filter((b) => b.result);
+  const decisive = finished.filter((b) => b.result !== '1/2-1/2');
+  const seconds = boards.reduce((sum, b) => sum + b.clock.white + b.clock.black, 0);
+  const cost = boards.reduce((sum, b) => sum + (b.cost || 0), 0);
+  const parts = [`${boards.length} board${boards.length === 1 ? '' : 's'}`, `${finished.length} finished`, `${decisive.length} decisive`];
+  if (round.bye) parts.push(`bye ${round.bye.name}`);
+  parts.push(`${compactTime(seconds)} thinking`);
+  if (boards.some((b) => typeof b.cost === 'number')) parts.push(`$${cost.toFixed(4)}`);
+  $('round-stats').textContent = parts.join(' \u00b7 ');
+}
+
+function viewRound(number) {
+  if (!tournament || !tournament.rounds.length) return;
+  const clamped = Math.min(Math.max(1, number), tournament.rounds.length);
+  viewedRound = clamped === tournament.rounds.length ? null : clamped;
+  renderTournament(tournament);
+}
+
+$('round-prev').addEventListener('click', () => viewRound(shownRound(tournament) - 1));
+$('round-next').addEventListener('click', () => viewRound(shownRound(tournament) + 1));
+document.addEventListener('keydown', (event) => {
+  if (PAGE !== 'tournament' || !tournament || event.target.closest('input, textarea, select, dialog[open]')) return;
+  if (event.key === 'PageUp') viewRound(shownRound(tournament) - 1);
+  else if (event.key === 'PageDown') viewRound(shownRound(tournament) + 1);
+  else return;
+  event.preventDefault();
+});
+
 function renderBoards(view) {
   const grid = $('boards');
-  const round = view.rounds[view.rounds.length - 1];
+  renderRoundNav(view);
+  const roundNumber = shownRound(view);
+  const round = view.rounds[roundNumber - 1];
   grid.hidden = !round;
   if (!round) return;
-  const numbers = new Set(round.pairings.map((board) => board.board));
-  for (const [number, mini] of minis) if (!numbers.has(number) || mini.gameId !== round.pairings[number - 1].game_id) { mini.root.remove(); minis.delete(number); }
+  const keys = new Set(round.pairings.map((board) => `${roundNumber}:${board.board}`));
+  for (const [key, mini] of minis) if (!keys.has(key) || mini.gameId !== round.pairings[parseInt(key.split(':')[1], 10) - 1].game_id) { mini.root.remove(); minis.delete(key); }
   for (const board of round.pairings) {
-    const node = miniNode(board, view);
-    minis.get(board.board).gameId = board.game_id;
+    const node = miniNode(board, view, roundNumber);
+    minis.get(`${roundNumber}:${board.board}`).gameId = board.game_id;
     if (node.parentElement !== grid) grid.append(node);
   }
 }
 
 async function selectGame(roundNumber, number) {
-  selectedRound = tournament && roundNumber === tournament.round ? null : roundNumber;
+  selectedRound = tournament && roundNumber === tournament.rounds.length ? null : roundNumber;
+  viewedRound = selectedRound;
   selectedBoard = number;
   await refresh();
   if (tournament) renderBoards(tournament);
@@ -864,6 +913,7 @@ async function selectGame(roundNumber, number) {
 
 async function selectBoard(number) {
   selectedRound = null;
+  viewedRound = null;
   if (selectedBoard === number) {
     const board = tournament && tournament.rounds.length ? tournament.rounds[tournament.rounds.length - 1].pairings[number - 1] : null;
     if (board && board.error) await api(`/api/tournament/board/${number}/retry`, {});
