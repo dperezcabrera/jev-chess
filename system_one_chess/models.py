@@ -16,6 +16,8 @@ SUGGESTED_LLMS = {
     "meta/muse-spark-1.3": "frontier",
     "google/gemini-3.8-flash": "frontier",
     "google/gemini-3.1-pro-preview": "frontier",
+    "deepseek/deepseek-v4.1-flash": "open weights",
+    "z-ai/glm-5.3": "open weights",
     "openai/gpt-5.6-luna": "ultra cheap",
     "google/gemma-4-31b-it": "ultra cheap",
 }
