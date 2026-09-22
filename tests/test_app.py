@@ -112,7 +112,7 @@ def test_missing_api_key_is_explained(app):
 
 
 def test_promotion_piece_is_honoured():
-    game = Game(chooser=None, credentials=None)
+    game = Game(chooser=None, credentials=None, registry=None, session_models=None)
     game._board = chess.Board("8/P6k/8/8/8/8/8/K7 w - - 0 1")
     state = asyncio.run(game.human_move("a7", "a8", "n"))
     assert state["fen"].startswith("N7/")
@@ -390,4 +390,105 @@ def test_each_colour_can_be_played_by_a_different_model(make_container, make_cli
     pgn = client.get("/api/pgn").text
     assert '[White "Jev (jev-latest)"]' in pgn and '[Black "Laya (convaiinnovations/laya)"]' in pgn
 
-    assert client.post("/api/new", json={"human": "white", "black": "gpt"}).status_code == 422
+    assert client.post("/api/new", json={"human": "white", "black": "gpt"}).status_code == 409
+
+
+def llm_stub(replies, seen):
+    """A chat completion endpoint that answers from `replies` in order and records every request."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        seen.append({"url": str(request.url), "model": body["model"], "messages": body["messages"]})
+        text = replies.pop(0)
+        usage = {"prompt_tokens": 900, "completion_tokens": 12, "cost": 0.0009}
+        return httpx.Response(200, json={"choices": [{"message": {"content": text}}], "usage": usage})
+
+    return handler
+
+
+def llm_app(make_container, make_client, replies, seen, **env):
+    from system_one_chess.llm import LLMApi
+
+    config = configuration(FlatDictSource({"OPENROUTER_API_KEY": "server-key", **env}), DictSource({}))
+    container = make_container("system_one_chess", "pico_fastapi", config=config)
+    container.get(LLMApi)._client = httpx.AsyncClient(transport=httpx.MockTransport(llm_stub(replies, seen)))
+    return make_client(container)
+
+
+def test_models_are_listed_and_llms_are_added_per_session(make_container, make_client):
+    client = llm_app(make_container, make_client, [], [])
+    listed = client.get("/api/models").json()
+    assert [m["id"] for m in listed["models"]] == ["jev", "laya"]
+    assert listed["models"][0]["ready"] and listed["models"][0]["kind"] == "system_one"
+    assert {"upstream": "openai/gpt-5.6-luna", "tier": "ultra cheap"} in listed["suggested"]
+
+    added = client.post("/api/models", json={"upstream": "openai/gpt-5-mini"}).json()
+    llm = added["models"][-1]
+    assert llm == {
+        "id": "llm:openai/gpt-5-mini",
+        "name": "gpt-5-mini",
+        "kind": "llm",
+        "provider": "openrouter",
+        "upstream": "openai/gpt-5-mini",
+        "ready": True,
+        "note": "",
+    }
+    assert client.post("/api/models", json={"upstream": "not an id"}).status_code == 422
+    assert client.delete("/api/models/openai/gpt-5-mini").json()["models"][-1]["id"] == "laya"
+
+
+def test_an_llm_plays_a_colour_through_the_chat_api_and_its_cost_is_counted(make_container, make_client):
+    seen = []
+    client = llm_app(make_container, make_client, ['{"choice": "e5"}', "I think Nf6 is best here"], seen)
+    client.post("/api/models", json={"upstream": "openai/gpt-5-mini"})
+    state = client.post("/api/new", json={"human": "white", "black": "llm:openai/gpt-5-mini"}).json()
+    assert state["models"]["black"] == "llm:openai/gpt-5-mini"
+
+    client.post("/api/move", json={"from": "e2", "to": "e4"})
+    state = client.post("/api/jev").json()
+    assert state["history"] == ["e4", "e5"] and state["jev_top"] == []
+    assert state["usage"]["calls"] == 1 and state["usage"]["cost_usd"] == pytest.approx(0.0009)
+    request = seen[0]
+    assert request["url"].endswith("/v1/chat/completions") and request["model"] == "openai/gpt-5-mini"
+    assert '"choice"' in request["messages"][0]["content"] and "- e5" in request["messages"][1]["content"]
+
+    client.post("/api/move", json={"from": "g1", "to": "f3"})
+    state = client.post("/api/jev").json()
+    assert state["history"][-1] == "Nf6", "a label found as plain text in the reply is accepted"
+    assert '[Black "gpt-5-mini (openai/gpt-5-mini)"]' in client.get("/api/pgn").text
+
+
+def test_two_illegal_answers_in_one_turn_lose_the_game(make_container, make_client):
+    seen = []
+    client = llm_app(make_container, make_client, ["I resign", "still nothing useful"], seen)
+    client.post("/api/models", json={"upstream": "openai/gpt-5-mini"})
+    client.post("/api/new", json={"human": "white", "black": "llm:openai/gpt-5-mini"})
+    client.post("/api/move", json={"from": "e2", "to": "e4"})
+    state = client.post("/api/jev").json()
+    assert state["over"] and state["result"] == "1-0 by illegal moves" and state["history"] == ["e4"]
+    assert not state["humans_turn"] and not state["jevs_turn"]
+    assert state["usage"]["calls"] == 1 and state["usage"]["retries"] == 1
+    assert state["usage"]["cost_usd"] == pytest.approx(0.0018), "both attempts are paid for"
+    assert len(seen) == 2
+    retry = seen[1]["messages"][-1]["content"]
+    assert retry.startswith("'I resign' is not one of the legal labels") and "loses the game" in retry
+    assert client.post("/api/move", json={"from": "d2", "to": "d4"}).status_code == 409
+    pgn = client.get("/api/pgn").text
+    assert '[Result "1-0"]' in pgn and '[Termination "illegal moves"]' in pgn
+
+
+def test_an_llm_needs_an_openrouter_key(make_container, make_client):
+    from system_one_chess.llm import LLMApi
+
+    container = make_container(
+        "system_one_chess",
+        "pico_fastapi",
+        config=configuration(FlatDictSource({"AI_GATEWAY_API_KEY": "vck"}), DictSource({})),
+    )
+    container.get(LLMApi)._client = httpx.AsyncClient(transport=httpx.MockTransport(llm_stub([], [])))
+    client = make_client(container)
+    client.post("/api/models", json={"upstream": "openai/gpt-5-mini"})
+    assert client.get("/api/models").json()["models"][-1]["note"] == "needs an OpenRouter key"
+    client.post("/api/new", json={"human": "white", "black": "llm:openai/gpt-5-mini"})
+    client.post("/api/move", json={"from": "e2", "to": "e4"})
+    assert "OpenRouter key" in client.post("/api/jev").json()["error"]

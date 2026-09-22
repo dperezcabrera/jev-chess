@@ -7,11 +7,20 @@ import httpx
 from pico_ioc import cleanup, component
 
 from .laya import LayaModel
+from .llm import IllegalAnswers, LLMApi, LLMError
 from .provider import NO_KEY, Gateway, JevProvider, SessionCredentials
 
 
 class JevError(Exception):
     pass
+
+
+class Forfeit(JevError):
+    """The side to move answered illegally twice and loses; `usage` is what those answers cost."""
+
+    def __init__(self, message: str, usage: "Answer"):
+        super().__init__(message)
+        self.usage = usage
 
 
 @dataclass(frozen=True)
@@ -22,6 +31,7 @@ class Answer:
     output_tokens: int
     cost_usd: float
     seconds: float
+    retried: bool = False
 
 
 @dataclass(frozen=True)
@@ -35,6 +45,7 @@ class Decision:
     output_tokens: int
     cost_usd: float
     seconds: float
+    retried: bool = False
 
 
 @component
@@ -85,14 +96,27 @@ def describe(board: chess.Board, move: chess.Move) -> str:
     return text
 
 
+def _state(board: chess.Board) -> dict:
+    return {
+        "game": "chess",
+        "side_to_move": "white" if board.turn else "black",
+        "fen": board.fen(),
+        "board": str(board),
+        "moves_so_far": chess.Board().variation_san(board.move_stack) if board.move_stack else "",
+    }
+
+
 @component
 class JevMoveChooser:
-    def __init__(self, api: JevApi, provider: JevProvider, laya: LayaModel):
+    def __init__(self, api: JevApi, provider: JevProvider, laya: LayaModel, llm: LLMApi):
         self._api = api
         self._provider = provider
         self._laya = laya
+        self._llm = llm
 
     def model_for(self, credentials: SessionCredentials | None = None, model: str = "") -> str:
+        if model.startswith("llm:"):
+            return model[4:]
         return self._provider.gateway(credentials, model).model
 
     async def ask(
@@ -104,18 +128,14 @@ class JevMoveChooser:
         model: str = "",
     ) -> Answer:
         """One Choice question about a position: `criteria` maps each option label to its description."""
+        if model.startswith("llm:"):
+            return await self._ask_llm(board, instructions, criteria, credentials, model[4:])
         gateway = self._provider.gateway(credentials, model)
         if not gateway.ready:
             raise JevError(NO_KEY)
         if gateway.local and len(criteria) > 8:
             criteria = dict.fromkeys(criteria)
-        state = {
-            "game": "chess",
-            "side_to_move": "white" if board.turn else "black",
-            "fen": board.fen(),
-            "board": str(board),
-            "moves_so_far": chess.Board().variation_san(board.move_stack) if board.move_stack else "",
-        }
+        state = _state(board)
         question = {"type": "choice", "instructions": instructions, "criteria": criteria}
         started = time.perf_counter()
         try:
@@ -137,6 +157,27 @@ class JevMoveChooser:
             output_tokens=int(usage.get("output_tokens") or 0),
             cost_usd=self._provider.cost_usd(response),
             seconds=time.perf_counter() - started,
+        )
+
+    async def _ask_llm(self, board, instructions, criteria, credentials, upstream: str) -> Answer:
+        gateway = self._provider.gateway_for("openrouter", credentials)
+        if not gateway.api_key:
+            raise JevError("An LLM needs an OpenRouter key. Add one in Settings (the gear icon).")
+        try:
+            answer = await self._llm.choose(gateway, upstream, _state(board), instructions, criteria)
+        except IllegalAnswers as e:
+            usage = Answer("", {}, e.input_tokens, e.output_tokens, e.cost_usd, e.seconds, retried=True)
+            raise Forfeit(str(e), usage) from e
+        except LLMError as e:
+            raise JevError(str(e)) from e
+        return Answer(
+            choice=answer.choice,
+            probabilities={},
+            input_tokens=answer.input_tokens,
+            output_tokens=answer.output_tokens,
+            cost_usd=answer.cost_usd,
+            seconds=answer.seconds,
+            retried=answer.retried,
         )
 
     async def choose(
@@ -172,4 +213,5 @@ class JevMoveChooser:
             output_tokens=answer.output_tokens,
             cost_usd=answer.cost_usd,
             seconds=answer.seconds,
+            retried=answer.retried,
         )

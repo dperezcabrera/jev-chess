@@ -159,7 +159,7 @@ async function runAnalysis() {
 }
 
 function playerName(color) {
-  const who = currentHuman === color ? 'You' : (current && current.models && current.models[color] === 'laya' ? 'Laya' : 'Jev');
+  const who = currentHuman === color ? 'You' : modelName(current && current.models ? current.models[color] : 'jev');
   return `${color === 'white' ? 'White' : 'Black'} (${who})`;
 }
 
@@ -411,35 +411,60 @@ $('pgn-copy').addEventListener('click', async () => {
 
 const dialog = $('side-dialog');
 const sideForm = $('side-form');
-let layaInstalled = true;
+let models = [];
+const chosen = { opponent: 'jev', white: 'jev', black: 'jev' };
+const modelName = (id) => (models.find((model) => model.id === id) || { name: id }).name;
+
+function renderSegments() {
+  for (const box of sideForm.querySelectorAll('[data-segment]')) {
+    const name = box.dataset.segment;
+    if (!models.some((model) => model.id === chosen[name] && model.ready)) chosen[name] = (models.find((model) => model.ready) || models[0] || { id: 'jev' }).id;
+    box.replaceChildren(...models.map((model) => {
+      const label = document.createElement('label');
+      label.className = `segment-option${model.ready ? '' : ' segment-unavailable'}`;
+      const input = Object.assign(document.createElement('input'), { type: 'radio', name, value: model.id, checked: model.id === chosen[name], disabled: !model.ready });
+      const title = Object.assign(document.createElement('span'), { textContent: model.name });
+      const note = Object.assign(document.createElement('small'), { textContent: model.ready ? (model.kind === 'llm' ? 'LLM' : model.provider === 'laya' ? 'local' : 'cloud') : model.note });
+      label.append(input, title, note);
+      return label;
+    }));
+  }
+}
 
 function syncSideDialog() {
   const play = sideForm.elements.mode.value === 'play';
-  const opponent = sideForm.elements.opponent.value;
+  for (const name of ['opponent', 'white', 'black']) {
+    const picked = sideForm.querySelector(`input[name="${name}"]:checked`);
+    if (picked) chosen[name] = picked.value;
+  }
   $('opponent-segment').hidden = !play;
   $('side-cards').hidden = !play;
   $('white-segment').hidden = play;
   $('black-segment').hidden = play;
   $('watch-cards').hidden = play;
-  const name = (model) => (model === 'laya' ? 'Laya' : 'Jev');
-  $('black-hint').textContent = `${name(opponent)} opens the game`;
-  $('watch-name').textContent = `${name(sideForm.elements.white.value)} vs ${name(sideForm.elements.black.value)}`;
+  $('black-hint').textContent = `${modelName(chosen.opponent)} opens the game`;
+  $('watch-name').textContent = `${modelName(chosen.white)} vs ${modelName(chosen.black)}`;
   $('side-footnote').textContent = play ? 'Pick your side to start playing right away.' : 'Both sides are decided by a model; you watch.';
-  for (const input of sideForm.querySelectorAll('input[value="laya"]')) {
-    input.disabled = !layaInstalled;
-    input.closest('.segment-option').classList.toggle('segment-unavailable', !layaInstalled);
+}
+
+async function loadModels() {
+  try {
+    const data = await api('/api/models');
+    models = data.models;
+    renderSegments();
+    syncSideDialog();
+    renderModels(data);
+  } catch (error) {
+    $('side-error').textContent = error.message;
   }
-  $('opponent-laya-note').textContent = layaInstalled ? 'local, free' : 'not installed';
 }
 
 function openSideDialog({ cancellable }) {
   $('side-cancel').hidden = !cancellable;
   $('side-error').textContent = '';
-  fetch('api/settings').then((response) => response.json()).then((settings) => {
-    layaInstalled = Boolean(settings.laya_installed);
-    syncSideDialog();
-  }).catch(() => {});
+  renderSegments();
   syncSideDialog();
+  loadModels();
   dialog.showModal();
   sideForm.elements.mode[0].focus();
 }
@@ -452,10 +477,9 @@ sideForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const play = sideForm.elements.mode.value === 'play';
   const human = play ? event.submitter.value : 'none';
-  const opponent = sideForm.elements.opponent.value;
   const body = play
-    ? { human, white: human === 'white' ? 'jev' : opponent, black: human === 'black' ? 'jev' : opponent }
-    : { human, white: sideForm.elements.white.value, black: sideForm.elements.black.value };
+    ? { human, white: human === 'white' ? 'jev' : chosen.opponent, black: human === 'black' ? 'jev' : chosen.opponent }
+    : { human, white: chosen.white, black: chosen.black };
   const current = ++generation;
   try {
     const state = await api('/api/new', body);
@@ -463,6 +487,62 @@ sideForm.addEventListener('submit', async (event) => {
     if (current === generation) render(state);
   } catch (error) {
     $('side-error').textContent = error.message;
+  }
+});
+
+function renderModels(data) {
+  const body = $('models-rows');
+  body.replaceChildren();
+  for (const model of data.models) {
+    const row = body.insertRow();
+    const name = row.insertCell();
+    name.className = 'col-text';
+    name.append(Object.assign(document.createElement('strong'), { textContent: model.name }), Object.assign(document.createElement('span'), { className: 'model-upstream', textContent: model.upstream }));
+    const kind = row.insertCell();
+    kind.className = 'col-badge';
+    kind.append(Object.assign(document.createElement('span'), { className: `kind-badge kind-${model.kind}`, textContent: model.kind === 'llm' ? 'LLM' : 'System One' }));
+    const runs = row.insertCell();
+    runs.className = 'col-text';
+    runs.textContent = { openrouter: 'OpenRouter', vercel: 'Vercel AI Gateway', laya: 'this server' }[model.provider] || model.provider;
+    const ready = row.insertCell();
+    ready.className = 'col-badge';
+    ready.append(Object.assign(document.createElement('span'), { className: model.ready ? 'ready-yes' : 'ready-no', textContent: model.ready ? 'yes' : model.note }));
+    const remove = row.insertCell();
+    remove.className = 'col-badge';
+    if (model.kind === 'llm') {
+      const button = Object.assign(document.createElement('button'), { className: 'icon-button', type: 'button', title: 'Remove' });
+      button.setAttribute('aria-label', `Remove ${model.name}`);
+      button.innerHTML = '<svg viewBox="0 0 24 24" width="1.25em" height="1.25em" fill="currentColor" aria-hidden="true"><path d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7l-1.4-1.4L9.2 12 2.9 5.7l1.4-1.4 6.3 6.3 6.3-6.3z" transform="translate(1.4 0)"/></svg>';
+      button.addEventListener('click', async () => {
+        await fetch(`api/models/${model.upstream}`, { method: 'DELETE' });
+        loadModels();
+      });
+      remove.append(button);
+    }
+  }
+  $('models-suggested').replaceChildren(...data.suggested.map((m) => new Option(m.tier, m.upstream)));
+}
+
+$('manage-models').addEventListener('click', () => {
+  $('models-error').textContent = '';
+  $('models-dialog').showModal();
+  $('models-upstream').focus();
+});
+$('models-close').addEventListener('click', () => $('models-dialog').close());
+$('models-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  $('models-error').textContent = '';
+  try {
+    const response = await fetch('api/models', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ upstream: $('models-upstream').value }) });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || (data.detail && data.detail[0] && data.detail[0].msg) || 'The server rejected that model.');
+    $('models-upstream').value = '';
+    models = data.models;
+    renderSegments();
+    syncSideDialog();
+    renderModels(data);
+  } catch (error) {
+    $('models-error').textContent = error.message;
   }
 });
 

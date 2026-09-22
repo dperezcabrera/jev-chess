@@ -1,3 +1,4 @@
+from dataclasses import asdict
 from pathlib import Path
 from typing import Literal
 
@@ -12,6 +13,7 @@ from starlette.staticfiles import StaticFiles
 from . import laya as local_model
 from .game import Game, IllegalMove
 from .jev import JevError
+from .models import SUGGESTED_LLMS, ModelRegistry, SessionModels
 from .provider import LABELS, JevProvider, ProviderError, SessionCredentials
 from .settings import SessionSettings
 
@@ -32,8 +34,12 @@ class SettingsRequest(BaseModel):
 
 class NewGameRequest(BaseModel):
     human: Literal["white", "black", "none"] = "white"
-    white: Literal["jev", "laya"] = "jev"
-    black: Literal["jev", "laya"] = "jev"
+    white: str = Field(default="jev", max_length=120)
+    black: str = Field(default="jev", max_length=120)
+
+
+class ModelRequest(BaseModel):
+    upstream: str = Field(min_length=3, max_length=120)
 
 
 @controller
@@ -103,6 +109,35 @@ class SettingsController:
     @delete("")
     async def forget(self):
         self._credentials.clear()
+        return self._view()
+
+
+@controller(prefix="/api/models")
+class ModelsController:
+    def __init__(self, registry: ModelRegistry, credentials: SessionCredentials, session: SessionModels):
+        self._registry = registry
+        self._credentials = credentials
+        self._session = session
+
+    def _view(self) -> dict:
+        models = [asdict(model) for model in self._registry.list(self._credentials, self._session)]
+        return {"models": models, "suggested": [{"upstream": u, "tier": t} for u, t in SUGGESTED_LLMS.items()]}
+
+    @get("")
+    async def read(self):
+        return self._view()
+
+    @post("")
+    async def add(self, body: ModelRequest):
+        try:
+            self._session.add(body.upstream)
+        except ValueError as e:
+            return JSONResponse({"error": str(e)}, status_code=422)
+        return self._view()
+
+    @delete("/{upstream:path}")
+    async def remove(self, upstream: str):
+        self._session.remove(upstream)
         return self._view()
 
 

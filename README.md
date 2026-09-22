@@ -15,6 +15,7 @@ Jev does not generate text. It answers typed questions about a state with calibr
 - **Cost and latency, live.** The footer adds up Jev calls, tokens, average latency and dollars for the current game, straight from the gateway's usage data. Jev playing both sides costs about $0.00005 per move at 300 to 400 ms each: a 20-move game for $0.0009.
 - **Engine analysis in your browser.** Stockfish 19 (WebAssembly, 1.8 MB) evaluates the game locally: evaluation chart, average centipawn loss (how many hundredths of a pawn each move gives away, see [Reading the numbers](#reading-the-numbers)), inaccuracies, mistakes and blunders per player. No server cost, no extra API calls. Depth is configurable.
 - **Is Jev better than chance?** For every position, Stockfish scores all legal moves and ranks the one that was played. A random mover sits on the 50th percentile by definition, so anything above that is signal. Two breakdowns sit next to what a random mover would score. By distance: the share of moves within 10, 25, 50, 100 and 200 centipawns of the best one, the absolute reference. By percentile range: top move, top 3 moves, top 2%, 5%, 10%, 20%, 30% and 50%, each with its average and its worst loss, because a top range can still hold a terrible move when a position has only one good one.
+- **LLMs at the same table.** Any chat model on OpenRouter can take a colour: add it by id in the Models dialog and it gets the same position, the same list of legal moves and the same instructions as Jev, through the chat API. Its tokens and cost count toward the game like Jev's, so a cheap model, a frontier model and a System One model can be compared per game. See [LLM opponents](#llm-opponents).
 - **Bring your own key.** A settings dialog behind the gear icon takes the provider and an API key for your session, so the Docker image runs without any configuration.
 - **PGN export**: a dialog shows the game in Portable Game Notation, ready to copy to the clipboard or download as a file.
 - **One game per browser session**, so several people can play on the same server.
@@ -44,7 +45,7 @@ If the key is already exported in your shell, pass it through without typing it:
 docker run --rm -p 127.0.0.1:8000:8000 -e AI_GATEWAY_API_KEY -e OPENROUTER_API_KEY ghcr.io/dperezcabrera/system-one-chess:latest
 ```
 
-Available tags: `latest` and the version number, such as `0.4.0`.
+Available tags: `latest` and the version number, such as `0.5.0`.
 
 To build the image yourself instead:
 
@@ -136,11 +137,19 @@ Then run:
 
 ## Playing
 
-The start screen takes three choices: play against a model or watch two models; which model, Jev or Laya; and your side, or which model takes each colour. So the same table can host you against Jev, you against Laya, or Jev against Laya, and the analysis reports each colour on its own. Drag or click pieces; only legal moves are allowed. When a pawn reaches the last rank, pick the piece on the board; click elsewhere or press Escape to take the move back.
+The start screen takes three choices: play against a model or watch two models; which model, Jev, Laya or any LLM you added under **Models**; and your side, or which model takes each colour. So the same table can host you against Jev, you against an LLM, or Jev against Laya, and the analysis reports each colour on its own. Drag or click pieces; only legal moves are allowed. When a pawn reaches the last rank, pick the piece on the board; click elsewhere or press Escape to take the move back.
 
 Analysis starts on its own when the game ends, or any time from **Analyze game**. Pick a depth first: Fast, Standard, Deep or Deepest. Deeper is slower and steadier; Standard analyzes a short game in a couple of seconds.
 
 Every browser session gets its own game with its own id, so several people can play against the same server at once. Games live in memory and are lost when the server restarts.
+
+## LLM opponents
+
+**Models** on the start screen opens a table of the models a game can pick from: Jev and Laya, plus the LLMs your session added by OpenRouter id (`vendor/model`). The input suggests a few real ones, all verified against OpenRouter's catalogue on 2026-09-22: frontier models from the [LLM Arena](https://arena.ai/leaderboard/text) text leaderboard (`anthropic/claude-fable-5.1`, `anthropic/claude-opus-5`, `meta/muse-spark-1.3`, `google/gemini-3.8-flash`, `google/gemini-3.1-pro-preview`) and two ultra cheap ones (`openai/gpt-5.6-luna`, `google/gemma-4-31b-it`). Any other id works as long as OpenRouter serves it. LLMs always go through OpenRouter, so they need an OpenRouter key even when Jev is served by Vercel.
+
+An LLM gets the same question as a System One model: the position (FEN, board, moves so far), the exact list of legal labels as a JSON array, and a description of each move. It must reply with `{"choice": "<label>"}`. A reply that names no legal label is an illegal move. The first one earns a retry that quotes the wrong answer and warns about the rule; a second illegal move in the same turn forfeits the game, which ends as `1-0 by illegal moves` or `0-1 by illegal moves` and is recorded in the PGN with a `Termination` tag. Both attempts are paid for and counted in the footer, and `retries` in the usage says how often a model needed the second chance. System One models cannot answer illegally, because they choose an option index rather than write a move.
+
+So the same board hosts you against a cheap LLM, a frontier LLM against Jev, or Laya against anything, one game at a time, with the cost of each game in the footer and the engine analysis reporting each colour on its own.
 
 ## How it works
 
@@ -200,9 +209,12 @@ Rules, legality, game-over detection and PGN come from [python-chess](https://py
 | GET | `/api/settings` | | Provider, model and whether a key is set, never the key |
 | POST | `/api/settings` | `{"provider": "vercel" \| "openrouter", "api_key": "..."}` | Use this provider and key for the session |
 | DELETE | `/api/settings` | | Forget the session's key |
-| POST | `/api/new` | `{"human": "white" \| "black" \| "none", "white": "jev" \| "laya", "black": "jev" \| "laya"}` | Start a new game; `white` and `black` name the model behind each colour |
+| POST | `/api/new` | `{"human": "white" \| "black" \| "none", "white": "<model id>", "black": "<model id>"}` | Start a new game; `white` and `black` name the model behind each colour: `jev`, `laya` or `llm:<vendor/model>` |
+| GET | `/api/models` | | Models this session can pick from, with `ready` and a note when a key is missing, plus suggested LLM ids |
+| POST | `/api/models` | `{"upstream": "openai/gpt-5.6-luna"}` | Add an OpenRouter model to the session |
+| DELETE | `/api/models/{vendor/model}` | | Remove it |
 
-Illegal or out-of-turn moves return `409`, malformed bodies `422`, and Jev or OpenRouter failures `502` with an `error` message.
+Illegal or out-of-turn moves and unknown models return `409`, malformed bodies and bad model ids `422`, and Jev or OpenRouter failures `502` with an `error` message.
 
 ### Reading the numbers
 
@@ -248,7 +260,7 @@ gh auth token | docker login ghcr.io -u dperezcabrera --password-stdin
 Then build, tag and push:
 
 ```sh
-docker build -t ghcr.io/dperezcabrera/system-one-chess:0.4.0 -t ghcr.io/dperezcabrera/system-one-chess:latest .
+docker build -t ghcr.io/dperezcabrera/system-one-chess:0.5.0 -t ghcr.io/dperezcabrera/system-one-chess:latest .
 docker push --all-tags ghcr.io/dperezcabrera/system-one-chess
 ```
 

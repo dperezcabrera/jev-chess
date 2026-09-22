@@ -226,6 +226,44 @@
     or by <a href="https://huggingface.co/convaiinnovations/laya" target="_blank" rel="noopener">Laya</a> on this server.
   </p>
 </main>
+<dialog id="models-dialog" class="models-dialog" aria-labelledby="models-title">
+  <div class="pgn-layout">
+    <header class="pgn-header">
+      <div>
+        <h2 id="models-title">Models</h2>
+        <p>Who can sit at the board. System One models answer with a typed decision; an LLM answers in text and is asked to name one option.</p>
+      </div>
+      <button id="models-close" class="icon-button" type="button" aria-label="Close" title="Close">
+        <svg viewBox="0 0 24 24" width="1.5em" height="1.5em" fill="currentColor" aria-hidden="true"><path d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7l-1.4-1.4L9.2 12 2.9 5.7l1.4-1.4 6.3 6.3 6.3-6.3z" transform="translate(1.4 0)"/></svg>
+      </button>
+    </header>
+    <div class="settings-body">
+      <table class="models-table">
+        <thead>
+          <tr>
+            <th class="col-text" scope="col">Model</th>
+            <th class="col-badge" scope="col">Kind</th>
+            <th class="col-text" scope="col">Runs on</th>
+            <th class="col-badge" scope="col">Ready</th>
+            <th class="col-badge" scope="col"><span class="visually-hidden">Remove</span></th>
+          </tr>
+        </thead>
+        <tbody id="models-rows"></tbody>
+      </table>
+      <form id="models-form" class="models-form">
+        <label for="models-upstream">Add an LLM by its OpenRouter id</label>
+        <div class="models-add">
+          <input id="models-upstream" name="upstream" list="models-suggested" placeholder="vendor/model" autocomplete="off" spellcheck="false" maxlength="120" required>
+          <datalist id="models-suggested"></datalist>
+          <button class="button" type="submit">Add</button>
+        </div>
+        <p class="field-hint">An LLM needs an OpenRouter key, from Settings. Its cost per move is what OpenRouter reports, output tokens included; reasoning models can spend thousands of them on one move.</p>
+        <p id="models-error" class="settings-error" role="alert"></p>
+      </form>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
   <form id="settings-form" class="pgn-layout">
     <header class="pgn-header">
@@ -304,26 +342,17 @@
 
       <fieldset class="segment" id="opponent-segment">
         <legend>Opponent</legend>
-        <div class="segment-options">
-          <label class="segment-option"><input type="radio" name="opponent" value="jev" checked><span>Jev</span><small>cloud</small></label>
-          <label class="segment-option"><input type="radio" name="opponent" value="laya"><span>Laya</span><small id="opponent-laya-note">local</small></label>
-        </div>
+        <div class="segment-options" data-segment="opponent"></div>
       </fieldset>
 
       <fieldset class="segment" id="white-segment" hidden>
         <legend>White</legend>
-        <div class="segment-options">
-          <label class="segment-option"><input type="radio" name="white" value="jev" checked><span>Jev</span></label>
-          <label class="segment-option"><input type="radio" name="white" value="laya"><span>Laya</span></label>
-        </div>
+        <div class="segment-options" data-segment="white"></div>
       </fieldset>
 
       <fieldset class="segment" id="black-segment" hidden>
         <legend>Black</legend>
-        <div class="segment-options">
-          <label class="segment-option"><input type="radio" name="black" value="jev" checked><span>Jev</span></label>
-          <label class="segment-option"><input type="radio" name="black" value="laya"><span>Laya</span></label>
-        </div>
+        <div class="segment-options" data-segment="black"></div>
       </fieldset>
 
       <div class="side-options" id="side-cards" role="group" aria-label="Your side">
@@ -346,6 +375,7 @@
           <span class="side-hint">Start watching</span>
         </button>
       </div>
+      <p class="side-manage"><button id="manage-models" class="link-button" type="button">Manage models</button> to add an LLM from OpenRouter and compare it with the System One models.</p>
       <p id="side-error" class="settings-error" role="alert"></p>
     </div>
 

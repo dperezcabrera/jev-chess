@@ -6,12 +6,11 @@ import chess
 import chess.pgn
 from pico_ioc import component
 
-from .jev import JevMoveChooser
+from .jev import Forfeit, JevMoveChooser
+from .models import ModelRegistry, SessionModels
 from .provider import SessionCredentials
 
 COLORS = {"white": {chess.WHITE}, "black": {chess.BLACK}, "none": set()}
-MODELS = ("jev", "laya")
-NAMES = {"jev": "Jev", "laya": "Laya"}
 
 
 class IllegalMove(Exception):
@@ -20,9 +19,17 @@ class IllegalMove(Exception):
 
 @component(scope="session")
 class Game:
-    def __init__(self, chooser: JevMoveChooser, credentials: SessionCredentials):
+    def __init__(
+        self,
+        chooser: JevMoveChooser,
+        credentials: SessionCredentials,
+        registry: ModelRegistry,
+        session_models: SessionModels,
+    ):
         self._chooser = chooser
         self._credentials = credentials
+        self._registry = registry
+        self._session_models = session_models
         self._lock = asyncio.Lock()
         self._reset("white")
 
@@ -31,13 +38,15 @@ class Game:
         self._board = chess.Board()
         self._human = human
         self._models = {chess.WHITE: white, chess.BLACK: black}
+        self._forfeited: chess.Color | None = None
         self._jev_top: list[dict] = []
-        self._usage = {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0, "seconds": 0.0}
+        self._usage = {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0, "seconds": 0.0, "retries": 0}
 
     async def new(self, human: str, white: str = "jev", black: str = "jev") -> dict:
         if human not in COLORS:
             raise IllegalMove(f"unknown color: {human!r}")
-        if white not in MODELS or black not in MODELS:
+        known = {model.id for model in self._registry.list(self._credentials, self._session_models)}
+        if white not in known or black not in known:
             raise IllegalMove(f"unknown model: {white!r}, {black!r}")
         async with self._lock:
             self._reset(human, white, black)
@@ -50,7 +59,7 @@ class Game:
     async def human_move(self, origin: str, target: str, promotion: str = "q") -> dict:
         async with self._lock:
             board = self._board
-            if board.is_game_over(claim_draw=True) or board.turn not in COLORS[self._human]:
+            if self._over() or board.turn not in COLORS[self._human]:
                 raise IllegalMove("it is not your turn")
             try:
                 move = chess.Move.from_uci(f"{origin}{target}")
@@ -66,37 +75,56 @@ class Game:
     async def jev_move(self) -> dict:
         async with self._lock:
             board = self._board
-            if board.is_game_over(claim_draw=True) or board.turn in COLORS[self._human]:
+            if self._over() or board.turn in COLORS[self._human]:
                 raise IllegalMove("it is not Jev's turn")
-            decision = await self._chooser.choose(board, self._credentials, model=self._models[board.turn])
+            try:
+                decision = await self._chooser.choose(board, self._credentials, model=self._models[board.turn])
+            except Forfeit as e:
+                self._count(e.usage)
+                self._forfeited = board.turn
+                return self._snapshot()
             self._jev_top = [{"san": san, "probability": p} for san, p in decision.top]
-            self._usage["calls"] += 1
-            self._usage["input_tokens"] += decision.input_tokens
-            self._usage["output_tokens"] += decision.output_tokens
-            self._usage["cost_usd"] += decision.cost_usd
-            self._usage["seconds"] += decision.seconds
+            self._count(decision)
             board.push(decision.move)
             return self._snapshot()
+
+    def _count(self, usage) -> None:
+        self._usage["calls"] += 1
+        self._usage["input_tokens"] += usage.input_tokens
+        self._usage["output_tokens"] += usage.output_tokens
+        self._usage["cost_usd"] += usage.cost_usd
+        self._usage["seconds"] += usage.seconds
+        self._usage["retries"] += int(usage.retried)
+
+    def _over(self) -> bool:
+        return self._forfeited is not None or self._board.is_game_over(claim_draw=True)
+
+    def _result(self) -> str | None:
+        if self._forfeited is not None:
+            return "0-1" if self._forfeited == chess.WHITE else "1-0"
+        return self._board.result(claim_draw=True) if self._board.is_game_over(claim_draw=True) else None
 
     async def pgn(self) -> tuple[str, str]:
         async with self._lock:
             game = chess.pgn.Game.from_board(self._board)
 
             def player(color):
-                model = self._models[color]
-                return f"{NAMES[model]} ({self._chooser.model_for(self._credentials, model)})"
+                model = self._registry.get(self._models[color], self._credentials, self._session_models)
+                return f"{model.name} ({model.upstream})"
 
             game.headers["Event"] = "system-one-chess"
             game.headers["Site"] = "https://github.com/dperezcabrera/system-one-chess"
             game.headers["Date"] = datetime.now(UTC).strftime("%Y.%m.%d")
             game.headers["White"] = "Human" if self._human == "white" else player(chess.WHITE)
             game.headers["Black"] = "Human" if self._human == "black" else player(chess.BLACK)
-            game.headers["Result"] = self._board.result(claim_draw=True)
+            game.headers["Result"] = self._result() or "*"
+            if self._forfeited is not None:
+                game.headers["Termination"] = "illegal moves"
             return f"system-one-chess-{self._id}.pgn", str(game) + "\n"
 
     def _snapshot(self) -> dict:
         board = self._board
-        over = board.is_game_over(claim_draw=True)
+        over = self._over()
         humans_turn = not over and board.turn in COLORS[self._human]
         dests: dict[str, list[str]] = {}
         if humans_turn:
@@ -110,7 +138,9 @@ class Game:
         last = board.peek() if board.move_stack else None
         outcome = board.outcome(claim_draw=True)
         result = None
-        if outcome:
+        if self._forfeited is not None:
+            result = f"{self._result()} by illegal moves"
+        elif outcome:
             result = f"{board.result(claim_draw=True)} by {outcome.termination.name.lower().replace('_', ' ')}"
         return {
             "game_id": self._id,
