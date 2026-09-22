@@ -202,7 +202,7 @@ function syncAnalysis(state) {
     setAnalysisMessage('Play a few moves, then analyze the game. Analysis starts on its own when the game ends.');
   }
   $('analyze').disabled = state.history.length < 2 || analysis.abort !== null;
-  if (state.over && analysis.done !== analysisKey(state) && !analysis.abort) runAnalysis();
+  if (state.over && PAGE !== 'tournament' && analysis.done !== analysisKey(state) && !analysis.abort) runAnalysis();
 }
 
 const analysisKey = (state) => `${state.history.length}:${$('depth').value}`;

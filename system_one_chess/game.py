@@ -45,6 +45,7 @@ class Game:
         self._illegal = {chess.WHITE: 0, chess.BLACK: 0}
         self._jev_top: list[dict] = []
         self._moves: list[dict] = []
+        self._deciding = False
         self._usage = self._empty_usage()
         self._usage_by_colour = {chess.WHITE: self._empty_usage(), chess.BLACK: self._empty_usage()}
 
@@ -88,26 +89,44 @@ class Game:
             return self._snapshot()
 
     async def jev_move(self) -> dict:
+        """One model move. The lock is held only to read and to write the position, never during the call to
+        the model, so the state stays readable while a model thinks; a game changed meanwhile is not touched."""
         async with self._lock:
             board = self._board
             if self._over() or board.turn in COLORS[self._human]:
                 raise IllegalMove("it is not Jev's turn")
+            if self._deciding:
+                raise IllegalMove("the model is already deciding")
+            self._deciding = True
+            game_id, ply = self._id, len(board.move_stack)
+            position, model, illegal = board.copy(), self._models[board.turn], self._illegal[board.turn]
+        try:
             try:
-                decision = await self._chooser.choose(
-                    board, self._credentials, model=self._models[board.turn], illegal_so_far=self._illegal[board.turn]
-                )
+                decision = await self._chooser.choose(position, self._credentials, model=model, illegal_so_far=illegal)
             except Forfeit as e:
-                self._count(e.usage)
-                self._moves.append({**self._move_record(board, e.usage), "san": None, "forfeit": True})
-                self._forfeited = board.turn
+                async with self._lock:
+                    self._still(game_id, ply)
+                    self._count(e.usage)
+                    self._moves.append({**self._move_record(self._board, e.usage), "san": None, "forfeit": True})
+                    self._forfeited = self._board.turn
+                    self._finish()
+                    return self._snapshot()
+            async with self._lock:
+                self._still(game_id, ply)
+                self._jev_top = [{"san": san, "probability": p} for san, p in decision.top]
+                self._count(decision)
+                self._moves.append(
+                    {**self._move_record(self._board, decision), "san": decision.san, "top": decision.top}
+                )
+                self._board.push(decision.move)
                 self._finish()
                 return self._snapshot()
-            self._jev_top = [{"san": san, "probability": p} for san, p in decision.top]
-            self._count(decision)
-            self._moves.append({**self._move_record(board, decision), "san": decision.san, "top": decision.top})
-            board.push(decision.move)
-            self._finish()
-            return self._snapshot()
+        finally:
+            self._deciding = False
+
+    def _still(self, game_id: str, ply: int) -> None:
+        if self._id != game_id or len(self._board.move_stack) != ply:
+            raise IllegalMove("the game changed while the model was deciding")
 
     def _players(self) -> dict[chess.Color, str]:
         """Who sat at each colour for the rankings: a model id, or `human` for the seat the browser played."""

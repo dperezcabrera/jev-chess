@@ -718,3 +718,33 @@ def test_model_boards_of_a_round_run_at_the_same_time_and_a_gateway_error_can_be
     view = until(lambda: (v := client.get("/api/tournament").json()) and v["done"] and v)
     assert view["boards_finished"] == 2 and view["finished_games"] == 2 and not view["active"]
     assert all(b["result"] for b in view["rounds"][0]["pairings"])
+
+
+def test_the_state_stays_readable_while_a_model_thinks(make_container, make_client):
+    import asyncio
+    import time
+
+    from system_one_chess.llm import LLMApi
+
+    async def slow(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(1.5)
+        body = json.loads(request.content)
+        labels = json.loads(body["messages"][1]["content"].split("Legal labels:\n")[1].split("\n\n")[0])
+        usage = {"prompt_tokens": 10, "completion_tokens": 2, "cost": 0.0}
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": json.dumps({"choice": labels[0]})}}], "usage": usage}
+        )
+
+    client = llm_app(make_container, make_client, [], [])
+    llm_app.container.get(LLMApi)._client = httpx.AsyncClient(transport=httpx.MockTransport(slow))
+    client.post("/api/models", json={"upstream": "openai/gpt-5-mini"})
+    body = {"participants": ["jev", "llm:openai/gpt-5-mini"], "human": False, "rounds": 1}
+    client.post("/api/tournament", json=body)
+    time.sleep(0.3)
+    started = time.monotonic()
+    view = client.get("/api/tournament").json()
+    board = client.get("/api/tournament/board/1").json()
+    assert time.monotonic() - started < 0.5, "reading the tournament must not wait for the model"
+    thinking = view["rounds"][0]["pairings"][0]
+    assert thinking["thinking_since"] is not None and not board["over"]
+    assert client.delete("/api/tournament").json()["active"] is False
