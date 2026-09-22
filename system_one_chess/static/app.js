@@ -618,8 +618,7 @@ function syncTournamentDialog() {
   $('tournament-hint').textContent = players < 2 ? 'Pick at least two players' : `${players} players, ${rounds} round${rounds === 1 ? '' : 's'}, ${games} game${games === 1 ? '' : 's'}${players % 2 ? ', one bye per round' : ''}`;
 }
 
-function openTournamentDialog({ cancellable }) {
-  $('tournament-cancel').hidden = !cancellable;
+function openTournamentDialog() {
   $('tournament-error').textContent = '';
   renderParticipants();
   loadModels();
@@ -700,8 +699,7 @@ async function loadModels() {
   }
 }
 
-function openSideDialog({ cancellable }) {
-  $('side-cancel').hidden = !cancellable;
+function openSideDialog() {
   $('side-error').textContent = '';
   renderSegments();
   syncSideDialog();
@@ -710,7 +708,7 @@ function openSideDialog({ cancellable }) {
   sideForm.elements.mode[0].focus();
 }
 
-$('new-game').addEventListener('click', () => (PAGE === 'tournament' ? openTournamentDialog({ cancellable: true }) : openSideDialog({ cancellable: true })));
+$('new-game').addEventListener('click', () => (PAGE === 'tournament' ? openTournamentDialog() : openSideDialog()));
 $('side-cancel').addEventListener('click', () => dialog.close());
 sideForm.addEventListener('change', syncSideDialog);
 
@@ -804,10 +802,10 @@ if (PAGE === 'tournament') {
   await loadModels();
   const view = await loadTournament();
   const initial = await refresh();
-  if (view && !view.active && initial) openTournamentDialog({ cancellable: false });
+  if (view && !view.active && initial) openTournamentDialog();
 } else {
   loadStandings();
   await loadModels();
   const initial = await refresh();
-  if (initial && initial.history.length === 0) openSideDialog({ cancellable: false });
+  if (initial && initial.history.length === 0) openSideDialog();
 }
