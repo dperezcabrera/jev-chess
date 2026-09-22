@@ -24,6 +24,17 @@ from .standings import POINTS, Standings
 
 HUMAN = "human"
 MAX_PARTICIPANTS = 16
+_LOADED: dict[str, "Tournament"] = {}
+
+
+def _claim(tournament_id: str, owner: "Tournament") -> None:
+    """One session plays a tournament at a time: loading it elsewhere stops the boards of the previous owner."""
+    previous = _LOADED.get(tournament_id)
+    if previous is not None and previous is not owner:
+        previous.stop()
+    _LOADED[tournament_id] = owner
+
+
 MAX_ROUNDS = 20
 
 
@@ -112,6 +123,7 @@ class Tournament:
             self._standings.ensure(player)
         self._started_at = time.time()
         self._id = f"{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(2)}"
+        _claim(self._id, self)
         self._semaphore = asyncio.Semaphore(self._concurrency)
         self._lock = asyncio.Lock()
         await self._new_round()
@@ -150,6 +162,7 @@ class Tournament:
         data = json.loads(path.read_text())
         self.stop()
         self._id = data["id"]
+        _claim(self._id, self)
         self._participants = list(data["participants"])
         self._rounds_total = data["rounds_total"]
         self._time_limit = data.get("time_limit")

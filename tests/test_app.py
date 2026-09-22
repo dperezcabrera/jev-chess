@@ -931,3 +931,19 @@ def test_a_player_whose_deciding_time_passes_the_limit_loses_on_time(make_contai
     view = client.post("/api/tournament", json=body).json()
     assert view["time_limit"] is None, "zero means no clock"
     assert client.delete("/api/tournament").json()["active"] is False
+
+
+def test_resuming_a_tournament_in_another_session_takes_it_over(make_container, make_client, tmp_path):
+    saved_dir = tmp_path / "saved"
+    legal = [lambda labels: json.dumps({"choice": labels[0]})] * 400
+    first = llm_app(make_container, make_client, legal, [], TOURNAMENT_DIR=str(saved_dir))
+    view = first.post(
+        "/api/tournament", json={"participants": ["jev"], "human": True, "rounds": 1, "time_limit": 0}
+    ).json()
+    tournament_id = view["id"]
+    assert view["active"] and view["human_board"] == 1
+    second = llm_app(make_container, make_client, legal, [], TOURNAMENT_DIR=str(saved_dir))
+    taken = second.post(f"/api/tournaments/{tournament_id}/resume").json()
+    assert taken["active"] and taken["id"] == tournament_id
+    assert first.get("/api/tournament").json()["active"] is False, "the first session no longer plays it"
+    assert second.delete("/api/tournament").json()["active"] is False
