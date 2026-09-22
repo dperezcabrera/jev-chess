@@ -536,45 +536,109 @@ function playerNode(player, extraClass = '') {
   return head;
 }
 
+function colourSwatch(colour) {
+  const swatch = Object.assign(document.createElement('span'), { className: `player-colour ${colour}` });
+  swatch.setAttribute('aria-hidden', 'true');
+  return swatch;
+}
+
+function boardNode(pairing, colour, extraClass) {
+  const head = playerNode(pairing[colour], extraClass);
+  if (colour === 'white') head.prepend(colourSwatch('white'));
+  else head.append(colourSwatch('black'));
+  return head;
+}
+
+function renderRoundsDialog(view) {
+  const body = $('rounds-body');
+  body.replaceChildren();
+  $('rounds-empty').hidden = view.rounds.length > 0;
+  view.rounds.forEach((round, roundIndex) => {
+    const block = Object.assign(document.createElement('section'), { className: 'round-block' });
+    block.append(Object.assign(document.createElement('h3'), { textContent: `Round ${roundIndex + 1} of ${view.rounds_total}` }));
+    const list = Object.assign(document.createElement('ol'), { className: 'boards' });
+    round.pairings.forEach((pairing, index) => {
+      const li = document.createElement('li');
+      if (view.active && roundIndex === view.round - 1 && index === view.game - 1) li.classList.add('current');
+      li.append(
+        Object.assign(document.createElement('span'), { className: 'board-number', textContent: `${index + 1}.` }),
+        boardNode(pairing, 'white', 'board-white'),
+        Object.assign(document.createElement('span'), { className: 'board-result', textContent: pairing.result || '\u2013' }),
+        boardNode(pairing, 'black', 'board-black'),
+      );
+      list.append(li);
+    });
+    if (round.bye) {
+      const li = document.createElement('li');
+      li.append(Object.assign(document.createElement('span'), { className: 'board-number', textContent: '' }), Object.assign(document.createElement('span'), { className: 'board-bye', textContent: `${round.bye.name} has the bye and scores a point` }));
+      list.append(li);
+    }
+    block.append(list);
+    body.append(block);
+  });
+}
+
+function renderStandingsDialog(view) {
+  const body = $('standings-rows');
+  body.replaceChildren();
+  $('standings-dialog-empty').hidden = view.standings.length > 0;
+  for (const row of view.standings) {
+    const tr = body.insertRow();
+    Object.assign(tr.insertCell(), { className: 'col-num', textContent: row.rank });
+    const cell = tr.insertCell();
+    cell.className = 'col-text';
+    cell.append(playerNode(row));
+    const half = (n) => (n % 1 ? n.toFixed(1) : n);
+    const values = [row.games, row.wins, row.draws, row.losses, half(row.points), half(row.buchholz), half(row.sonneborn_berger), row.calls, `${compactTokens(row.input_tokens)} / ${compactTokens(row.output_tokens)}`, compactTime(row.seconds), row.forfeits ? `${row.illegal} (${row.forfeits} lost)` : row.illegal, `$${row.cost_usd.toFixed(4)}`];
+    for (const value of values) Object.assign(tr.insertCell(), { className: 'col-num', textContent: value });
+  }
+}
+
 function renderTournament(view) {
   tournament = view;
   const status = $('tournament-status');
   $('tournament-stop').hidden = !view.active;
+  $('open-standings').disabled = !view.rounds.length;
+  $('open-rounds').disabled = !view.rounds.length;
+  for (const [id, what] of [['tournament-pgn', 'as PGN'], ['tournament-export', 'with every statistic, as JSON']]) {
+    const link = $(id);
+    link.setAttribute('aria-disabled', String(!view.finished_games));
+    link.classList.toggle('is-disabled', !view.finished_games);
+    link.title = view.finished_games ? `Download the ${view.finished_games} finished game${view.finished_games === 1 ? '' : 's'} ${what}` : 'No finished game yet';
+  }
   if (!view.rounds.length) status.textContent = 'No tournament yet';
-  else if (view.done) status.innerHTML = `<strong>Finished</strong> after ${view.rounds_total} rounds`;
-  else {
+  else if (view.done) {
+    const leader = view.standings[0];
+    status.replaceChildren(Object.assign(document.createElement('strong'), { textContent: 'Finished' }), ` after ${view.rounds_total} round${view.rounds_total === 1 ? '' : 's'}: ${leader.name} wins with ${leader.points % 1 ? leader.points.toFixed(1) : leader.points} points`);
+  } else {
     const round = view.rounds[view.round - 1];
     const pairing = round.pairings[view.game - 1];
-    status.replaceChildren(Object.assign(document.createElement('strong'), { textContent: `Round ${view.round} of ${view.rounds_total}` }), ` \u00b7 game ${view.game} of ${view.games_in_round}: ${pairing.white.name} vs ${pairing.black.name}`);
-  }
-  const body = $('tournament-standings');
-  body.replaceChildren();
-  for (const row of view.standings) {
-    const tr = body.insertRow();
-    Object.assign(tr.insertCell(), { className: 'col-rank', textContent: row.rank });
-    const cell = tr.insertCell();
-    cell.className = 'col-model';
-    cell.append(playerNode(row));
-    for (const value of [row.games, row.points % 1 ? row.points.toFixed(1) : row.points, row.buchholz % 1 ? row.buchholz.toFixed(1) : row.buchholz, ...spendCells(row)]) {
-      Object.assign(tr.insertCell(), { className: 'col-num', textContent: value });
-    }
+    status.replaceChildren(Object.assign(document.createElement('strong'), { textContent: `Round ${view.round} of ${view.rounds_total}` }), ` \u00b7 board ${view.game} of ${view.games_in_round}: ${pairing.white.name} vs ${pairing.black.name}`);
   }
   const list = $('tournament-pairings');
   list.replaceChildren();
   const round = view.rounds[view.rounds.length - 1];
-  if (!round) return;
-  round.pairings.forEach((pairing, index) => {
-    const li = document.createElement('li');
-    if (view.active && index === view.game - 1) li.classList.add('current');
-    li.append(playerNode(pairing.white, 'pair-white'), Object.assign(document.createElement('span'), { className: 'pair-vs', textContent: 'vs' }), playerNode(pairing.black), Object.assign(document.createElement('span'), { className: 'pair-result', textContent: pairing.result || '\u2013' }));
-    list.append(li);
-  });
-  if (round.bye) {
-    const li = document.createElement('li');
-    li.append(Object.assign(document.createElement('span'), { className: 'pair-bye', textContent: `${round.bye.name} sits this round out and scores a bye` }));
-    list.append(li);
+  if (round) {
+    round.pairings.forEach((pairing, index) => {
+      const li = document.createElement('li');
+      if (view.active && index === view.game - 1) li.classList.add('current');
+      li.append(playerNode(pairing.white, 'pair-white'), Object.assign(document.createElement('span'), { className: 'pair-vs', textContent: 'vs' }), playerNode(pairing.black), Object.assign(document.createElement('span'), { className: 'pair-result', textContent: pairing.result || '\u2013' }));
+      list.append(li);
+    });
+    if (round.bye) {
+      const li = document.createElement('li');
+      li.append(Object.assign(document.createElement('span'), { className: 'pair-bye', textContent: `${round.bye.name} sits this round out and scores a bye` }));
+      list.append(li);
+    }
   }
+  renderStandingsDialog(view);
+  renderRoundsDialog(view);
 }
+
+$('open-standings').addEventListener('click', () => $('standings-dialog').showModal());
+$('standings-close').addEventListener('click', () => $('standings-dialog').close());
+$('open-rounds').addEventListener('click', () => $('rounds-dialog').showModal());
+$('rounds-close').addEventListener('click', () => $('rounds-dialog').close());
 
 async function loadTournament() {
   try {

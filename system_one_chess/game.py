@@ -44,6 +44,7 @@ class Game:
         self._forfeited: chess.Color | None = None
         self._illegal = {chess.WHITE: 0, chess.BLACK: 0}
         self._jev_top: list[dict] = []
+        self._moves: list[dict] = []
         self._usage = self._empty_usage()
         self._usage_by_colour = {chess.WHITE: self._empty_usage(), chess.BLACK: self._empty_usage()}
 
@@ -74,6 +75,14 @@ class Game:
                 raise IllegalMove("malformed move") from e
             if move not in board.legal_moves:
                 raise IllegalMove(f"illegal move: {origin}{target}")
+            self._moves.append(
+                {
+                    "ply": len(board.move_stack) + 1,
+                    "colour": self._colour_name(board.turn),
+                    "player": "human",
+                    "san": board.san(move),
+                }
+            )
             board.push(move)
             self._finish()
             return self._snapshot()
@@ -89,11 +98,13 @@ class Game:
                 )
             except Forfeit as e:
                 self._count(e.usage)
+                self._moves.append({**self._move_record(board, e.usage), "san": None, "forfeit": True})
                 self._forfeited = board.turn
                 self._finish()
                 return self._snapshot()
             self._jev_top = [{"san": san, "probability": p} for san, p in decision.top]
             self._count(decision)
+            self._moves.append({**self._move_record(board, decision), "san": decision.san, "top": decision.top})
             board.push(decision.move)
             self._finish()
             return self._snapshot()
@@ -124,7 +135,26 @@ class Game:
                 "forfeited": self._forfeited,
                 "illegal": dict(self._illegal),
                 "usage": {color: dict(totals) for color, totals in self._usage_by_colour.items()},
+                "moves": [dict(move) for move in self._moves],
+                "fen": self._board.fen(),
             }
+
+    @staticmethod
+    def _colour_name(color: chess.Color) -> str:
+        return "white" if color == chess.WHITE else "black"
+
+    def _move_record(self, board: chess.Board, usage) -> dict:
+        """One line of the game log: who decided, what it cost and how long it took."""
+        return {
+            "ply": len(board.move_stack) + 1,
+            "colour": self._colour_name(board.turn),
+            "player": self._models[board.turn],
+            "seconds": usage.seconds,
+            "input_tokens": usage.input_tokens,
+            "output_tokens": usage.output_tokens,
+            "cost_usd": usage.cost_usd,
+            "illegal": usage.illegal,
+        }
 
     @staticmethod
     def _empty_usage() -> dict:

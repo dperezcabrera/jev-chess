@@ -95,22 +95,23 @@
     <section class="ranking-section tournament-section" id="tournament-section" aria-labelledby="tournament-title" hidden>
       <h2 id="tournament-title">Tournament</h2>
       <p id="tournament-status" class="tournament-status">No tournament yet</p>
-      <div class="ranking-box">
-        <table class="decision ranking">
-          <thead>
-            <tr>
-              <th class="col-rank" scope="col"><abbr title="Rank">#</abbr></th>
-              <th class="col-model" scope="col">Player</th>
-              <th class="col-num" scope="col"><abbr title="Games">G</abbr></th>
-              <th class="col-num" scope="col"><abbr title="Points, a bye scores one">Pts</abbr></th>
-              <th class="col-num" scope="col"><abbr title="Buchholz: the points of the opponents faced">Bh</abbr></th>
-              <th class="col-num" scope="col"><abbr title="Tokens, input and output">Tok</abbr></th>
-              <th class="col-num" scope="col"><abbr title="Time spent deciding">Time</abbr></th>
-              <th class="col-num" scope="col">Cost</th>
-            </tr>
-          </thead>
-          <tbody id="tournament-standings"></tbody>
-        </table>
+      <div class="tournament-actions">
+        <button id="open-standings" class="button button-ghost button-small" type="button">
+          <svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true"><path d="M3 13h4v8H3zm7-9h4v17h-4zm7 5h4v12h-4z"/></svg>
+          Standings
+        </button>
+        <button id="open-rounds" class="button button-ghost button-small" type="button">
+          <svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true"><path d="M4 5h16v2H4zm0 6h16v2H4zm0 6h16v2H4z"/></svg>
+          Rounds
+        </button>
+        <a id="tournament-pgn" class="button button-ghost button-small" href="api/tournament/pgn" download="system-one-chess-tournament.pgn" aria-disabled="true" title="Download every finished game of the tournament as PGN">
+          <svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true"><path d="M5 20h14v-2H5v2zm7-4 5-5-1.4-1.4-2.6 2.6V4h-2v8.2L8.4 9.6 7 11l5 5z"/></svg>
+          PGN
+        </a>
+        <a id="tournament-export" class="button button-ghost button-small" href="api/tournament/export" download="system-one-chess-tournament.json" aria-disabled="true" title="Download every statistic of the tournament as JSON">
+          <svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true"><path d="M3 3h18v18H3zm2 2v14h14V5zm2 9h3v3H7zm4-4h3v7h-3zm4-3h3v10h-3z"/></svg>
+          Data
+        </a>
       </div>
       <ol id="tournament-pairings" class="pairings" aria-label="Pairings of the current round"></ol>
       <p class="side-manage"><button id="tournament-stop" class="link-button" type="button" hidden>Stop the tournament</button></p>
@@ -298,6 +299,60 @@
     or by <a href="https://huggingface.co/convaiinnovations/laya" target="_blank" rel="noopener">Laya</a> on this server.
   </p>
 </main>
+<dialog id="standings-dialog" class="models-dialog wide-dialog" aria-labelledby="standings-title">
+  <div class="pgn-layout">
+    <header class="pgn-header">
+      <div>
+        <h2 id="standings-title">Standings</h2>
+        <p id="standings-summary">Points first, then Buchholz (the points of the opponents faced), Sonneborn-Berger (the points of the opponents beaten, half for a draw), wins, and the lower cost. A bye scores a point.</p>
+      </div>
+      <button id="standings-close" class="icon-button" type="button" aria-label="Close" title="Close">
+        <svg viewBox="0 0 24 24" width="1.5em" height="1.5em" fill="currentColor" aria-hidden="true"><path d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7l-1.4-1.4L9.2 12 2.9 5.7l1.4-1.4 6.3 6.3 6.3-6.3z" transform="translate(1.4 0)"/></svg>
+      </button>
+    </header>
+    <div class="settings-body">
+      <table class="detail-table">
+        <thead>
+          <tr>
+            <th class="col-num" scope="col">#</th>
+            <th class="col-text" scope="col">Player</th>
+            <th class="col-num" scope="col"><abbr title="Games">G</abbr></th>
+            <th class="col-num" scope="col"><abbr title="Wins">W</abbr></th>
+            <th class="col-num" scope="col"><abbr title="Draws">D</abbr></th>
+            <th class="col-num" scope="col"><abbr title="Losses">L</abbr></th>
+            <th class="col-num" scope="col"><abbr title="Points">Pts</abbr></th>
+            <th class="col-num" scope="col"><abbr title="Buchholz">Bh</abbr></th>
+            <th class="col-num" scope="col"><abbr title="Sonneborn-Berger">SB</abbr></th>
+            <th class="col-num" scope="col">Calls</th>
+            <th class="col-num" scope="col">Tokens</th>
+            <th class="col-num" scope="col">Time</th>
+            <th class="col-num" scope="col"><abbr title="Illegal answers, and games lost by them">Illegal</abbr></th>
+            <th class="col-num" scope="col">Cost</th>
+          </tr>
+        </thead>
+        <tbody id="standings-rows"></tbody>
+      </table>
+      <p id="standings-dialog-empty" class="empty">No tournament yet.</p>
+    </div>
+  </div>
+</dialog>
+<dialog id="rounds-dialog" class="models-dialog wide-dialog" aria-labelledby="rounds-title">
+  <div class="pgn-layout">
+    <header class="pgn-header">
+      <div>
+        <h2 id="rounds-title">Rounds</h2>
+        <p>Every round with its boards: white on the left, black on the right, colours balanced as the Swiss system allows. An odd player out sits the round out with a bye.</p>
+      </div>
+      <button id="rounds-close" class="icon-button" type="button" aria-label="Close" title="Close">
+        <svg viewBox="0 0 24 24" width="1.5em" height="1.5em" fill="currentColor" aria-hidden="true"><path d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7l-1.4-1.4L9.2 12 2.9 5.7l1.4-1.4 6.3 6.3 6.3-6.3z" transform="translate(1.4 0)"/></svg>
+      </button>
+    </header>
+    <div class="settings-body">
+      <div id="rounds-body"></div>
+      <p id="rounds-empty" class="empty">No tournament yet.</p>
+    </div>
+  </div>
+</dialog>
 <dialog id="models-dialog" class="models-dialog" aria-labelledby="models-title">
   <div class="pgn-layout">
     <header class="pgn-header">

@@ -3,12 +3,15 @@
 Games between models play themselves; a game with you waits for your moves. The next game starts when the
 browser asks for it, so a result stays on screen until then. With an odd number of players one gets a bye."""
 
+from datetime import UTC, datetime
+
+import chess
 from pico_ioc import component
 
 from .game import Game, IllegalMove
 from .models import ModelRegistry, SessionModels
 from .provider import SessionCredentials
-from .standings import Standings
+from .standings import POINTS, Standings
 
 HUMAN = "human"
 MAX_PARTICIPANTS = 10
@@ -52,6 +55,7 @@ class Tournament:
         self._balance: dict[str, int] = {}
         self._byes: set[str] = set()
         self._opponents: dict[str, list[str]] = {}
+        self._scores: dict[str, list[tuple[str, float]]] = {}
 
     async def start(self, participants: list[str], human: bool, rounds: int) -> dict:
         ids = list(dict.fromkeys(participants))
@@ -76,6 +80,7 @@ class Tournament:
         self._balance = dict.fromkeys(ids, 0)
         self._byes = set()
         self._opponents = {player: [] for player in ids}
+        self._scores = {player: [] for player in ids}
         self._standings = Standings(self._registry)
         for player in ids:
             self._standings.ensure(player)
@@ -101,12 +106,76 @@ class Tournament:
             outcome["usage"],
         )
         entry["result"] = outcome["result"]
+        _, pgn = await self._game.pgn()
+        entry["pgn"] = pgn.replace('[Event "system-one-chess"]', '[Event "system-one-chess tournament"]', 1).replace(
+            '[Round "?"]', f'[Round "{len(self._rounds)}.{self._pairing + 1}"]', 1
+        )
+        entry["record"] = {
+            "forfeited": colour_name(outcome["forfeited"]),
+            "illegal": {colour_name(c): n for c, n in outcome["illegal"].items()},
+            "usage": {colour_name(c): dict(u) for c, u in outcome["usage"].items()},
+            "moves": outcome["moves"],
+            "final_fen": outcome["fen"],
+        }
+        white, black = entry["white"], entry["black"]
+        white_points, black_points = POINTS[outcome["result"]]
+        self._scores[white].append((black, white_points))
+        self._scores[black].append((white, black_points))
         self._pairing += 1
         if self._pairing >= len(self._rounds[-1]["pairings"]):
             if len(self._rounds) >= self._rounds_total:
                 return await self._game.snapshot()
             self._new_round()
         return await self._begin()
+
+    def export(self) -> dict:
+        """Everything recorded about the tournament, for analysis and writing: players, rounds with every game
+        move by move (who decided, tokens, seconds, cost, illegal answers, the probabilities a System One model
+        gave), results, byes, standings with the tie-breaks and what each player spent."""
+        known = {model.id: model for model in self._registry.list(self._credentials, self._session)}
+
+        def participant(model_id: str) -> dict:
+            model = known.get(model_id)
+            return {
+                "id": model_id,
+                "name": self._registry.name_of(model_id),
+                "kind": "human" if model_id == HUMAN else model.kind if model else "unknown",
+                "upstream": model.upstream if model else "",
+                "provider": model.provider if model else "",
+            }
+
+        return {
+            "format": "system-one-chess tournament",
+            "exported_at": datetime.now(UTC).isoformat(timespec="seconds"),
+            "system": "Swiss",
+            "rounds_total": self._rounds_total,
+            "done": self.done,
+            "participants": [participant(model_id) for model_id in self._participants],
+            "rounds": [
+                {
+                    "round": number,
+                    "bye": round_["bye"],
+                    "games": [
+                        {
+                            "board": board,
+                            "white": entry["white"],
+                            "black": entry["black"],
+                            "result": entry["result"],
+                            "game_id": entry["game_id"],
+                            "pgn": entry.get("pgn", ""),
+                            **entry.get("record", {}),
+                        }
+                        for board, entry in enumerate(round_["pairings"], 1)
+                    ],
+                }
+                for number, round_ in enumerate(self._rounds, 1)
+            ],
+            "standings": self._table() if self._rounds else [],
+        }
+
+    def pgn(self) -> str:
+        """Every finished game of the tournament, in the order played, as one PGN file."""
+        return "\n".join(entry["pgn"] for round_ in self._rounds for entry in round_["pairings"] if entry.get("pgn"))
 
     def stop(self) -> None:
         self._rounds = []
@@ -141,7 +210,10 @@ class Tournament:
             self._byes.add(bye)
             self._standings.bye(bye)
         self._rounds.append(
-            {"pairings": [{"white": w, "black": b, "game_id": None, "result": None} for w, b in pairs], "bye": bye}
+            {
+                "pairings": [{"white": w, "black": b, "game_id": None, "result": None, "pgn": ""} for w, b in pairs],
+                "bye": bye,
+            }
         )
         self._pairing = 0
 
@@ -155,12 +227,25 @@ class Tournament:
         return state
 
     def _table(self) -> list[dict]:
-        """The standings with the Buchholz tie-break: the sum of the points of everyone a player has faced."""
+        """The standings with the usual tie-breaks: Buchholz (the points of everyone a player has faced),
+        Sonneborn-Berger (the points of the opponents beaten plus half the points of those drawn), then wins."""
         rows = self._standings.table()
         points = {row["id"]: row["points"] for row in rows}
         for row in rows:
             row["buchholz"] = sum(points[opponent] for opponent in self._opponents.get(row["id"], []))
-        rows.sort(key=lambda row: (-row["points"], -row["buchholz"], row["cost_usd"], row["name"]))
+            row["sonneborn_berger"] = sum(
+                points[opponent] * earned for opponent, earned in self._scores.get(row["id"], [])
+            )
+        rows.sort(
+            key=lambda row: (
+                -row["points"],
+                -row["buchholz"],
+                -row["sonneborn_berger"],
+                -row["wins"],
+                row["cost_usd"],
+                row["name"],
+            )
+        )
         for rank, row in enumerate(rows, 1):
             row["rank"] = rank
         return rows
@@ -180,6 +265,7 @@ class Tournament:
             "game": self._pairing + 1 if self.active else None,
             "games_in_round": len(self._rounds[-1]["pairings"]) if self._rounds else 0,
             "current_game_id": current["game_id"] if current else None,
+            "finished_games": sum(1 for round_ in self._rounds for entry in round_["pairings"] if entry.get("pgn")),
             "rounds": [
                 {
                     "pairings": [
@@ -192,3 +278,7 @@ class Tournament:
             ],
             "standings": self._table() if self._rounds else [],
         }
+
+
+def colour_name(color: chess.Color | None) -> str | None:
+    return None if color is None else ("white" if color == chess.WHITE else "black")

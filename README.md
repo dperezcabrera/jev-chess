@@ -154,13 +154,15 @@ So the same board hosts you against a cheap LLM, a frontier LLM against Jev, or 
 
 ## The tournament page
 
-**Tournament** in the top bar opens a second page, `/tournament`, with the same board and panel, so the single-game screen stays as it is. Pick the players (Jev, Laya and the LLMs you added, plus yourself if you tick "I play too") and the number of rounds, and the tournament runs by the Swiss system: every round pairs players on equal scores, nobody meets twice while that can be avoided, colours alternate as far as the balance allows, and with an odd number of players the lowest-placed one who has not had a bye sits the round out and scores a full point. Games between models play themselves, one after the other, and a game with you waits for your moves. The panel shows the round, the pairings with their results and the standings: points, the Buchholz tie-break (the points of the opponents faced), games, and what each player spent over the whole tournament in tokens, deciding time and dollars. Every tournament game also counts in the session ranking.
+**Tournament** in the top bar opens a second page, `/tournament`, with the same board and panel, so the single-game screen stays as it is. Pick the players (Jev, Laya and the LLMs you added, plus yourself if you tick "I play too") and the number of rounds, and the tournament runs by the Swiss system: every round pairs players on equal scores, nobody meets twice while that can be avoided, colours alternate as far as the balance allows, and with an odd number of players the lowest-placed one who has not had a bye sits the round out and scores a full point. Games between models play themselves, one after the other, and a game with you waits for your moves. The panel shows the round and the pairings of the moment; **Standings** opens the full table (games, wins, draws, losses, points, the Buchholz and Sonneborn-Berger tie-breaks, calls, tokens, deciding time, illegal answers and cost), **Rounds** every board of every round with white, black, result and byes, **PGN** downloads every finished game of the tournament in one file (with `Round` tags), and **Data** downloads everything recorded as JSON: participants, rounds, each game move by move with who decided, tokens, seconds, cost, illegal answers and the probabilities a System One model gave, results, standings and tie-breaks, ready for an article. Every tournament game also counts in the session ranking.
 
 | Method | Path | Body | Description |
 |---|---|---|---|
 | GET | `/api/tournament` | | The tournament: rounds, pairings, results and standings |
 | POST | `/api/tournament` | `{"participants": ["jev", "llm:openai/gpt-5.6-luna"], "human": true, "rounds": 3}` | Start one; the first game starts with it |
 | POST | `/api/tournament/next` | | Record the finished game and start the next one, pairing a new round when the current one is complete; `409` while the game is still on |
+| GET | `/api/tournament/pgn` | | Every finished game of the tournament as one PGN file |
+| GET | `/api/tournament/export` | | Everything recorded about the tournament as JSON, move by move |
 | DELETE | `/api/tournament` | | Abandon it |
 
 ## How it works

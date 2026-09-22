@@ -652,7 +652,29 @@ def test_a_swiss_tournament_plays_itself_and_waits_for_you(make_container, make_
     assert state["over"] and state["result"] == "0-1 by illegal moves"
     following = client.post("/api/tournament/next").json()
     view, state = following["tournament"], following["state"]
-    assert view["round"] == 2 and view["rounds"][0]["pairings"][0]["result"] == "0-1"
+    assert view["round"] == 2 and view["rounds"][0]["pairings"][0]["result"] == "0-1" and view["finished_games"] == 1
+    pgn = client.get("/api/tournament/pgn")
+    assert pgn.headers["content-disposition"].endswith('.pgn"') and pgn.text.count("[Event ") == 1
+    assert '[Round "1.1"]' in pgn.text and '[Result "0-1"]' in pgn.text and '[Termination "illegal moves"]' in pgn.text
+    assert '[White "gpt-5-mini (openai/gpt-5-mini)"]' in pgn.text and '[Black "Jev (jev-latest)"]' in pgn.text
+    assert pgn.text.count("[Round ") == 1
+    export = client.get("/api/tournament/export")
+    assert export.headers["content-disposition"].endswith('.json"')
+    data = export.json()
+    assert data["system"] == "Swiss" and data["rounds_total"] == 2 and not data["done"]
+    assert [p["id"] for p in data["participants"]] == ["llm:openai/gpt-5-mini", "jev", "human"]
+    assert data["participants"][0]["upstream"] == "openai/gpt-5-mini" and data["participants"][2]["kind"] == "human"
+    game = data["rounds"][0]["games"][0]
+    assert game["board"] == 1 and game["result"] == "0-1" and game["forfeited"] == "white"
+    assert (
+        game["moves"][0]["player"] == "llm:openai/gpt-5-mini"
+        and game["moves"][0]["forfeit"]
+        and game["moves"][0]["illegal"] == 2
+    )
+    assert game["moves"][0]["cost_usd"] == pytest.approx(0.0018) and game["usage"]["white"]["calls"] == 1
+    by_id = {row["id"]: row for row in data["standings"]}
+    assert data["rounds"][0]["bye"] == "human" and by_id["llm:openai/gpt-5-mini"]["sonneborn_berger"] == 0.0
+    assert data["rounds"][1]["games"][0]["result"] is None and "moves" not in data["rounds"][1]["games"][0]
     second = view["rounds"][1]
     assert {second["pairings"][0]["white"]["id"], second["pairings"][0]["black"]["id"]} == {"human", "jev"}, (
         "the two leaders meet"
@@ -664,6 +686,8 @@ def test_a_swiss_tournament_plays_itself_and_waits_for_you(make_container, make_
     )
     assert rows["llm:openai/gpt-5-mini"]["points"] == 1.0 and rows["llm:openai/gpt-5-mini"]["byes"] == 1
     assert rows["jev"]["buchholz"] == 2.0, "Jev faced the LLM (a point from its bye) and now you (a point from yours)"
+    assert rows["jev"]["sonneborn_berger"] == 1.0, "a win over the LLM, which holds one point"
+    assert rows["llm:openai/gpt-5-mini"]["sonneborn_berger"] == 0.0
 
     client.post("/api/new", json={"human": "white"})
     assert client.post("/api/tournament/next").status_code == 409, "a game started outside the tournament"

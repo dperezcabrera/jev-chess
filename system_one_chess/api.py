@@ -70,6 +70,11 @@ class GameController:
     async def state(self):
         return await self._game.snapshot()
 
+    @get("/export")
+    async def export(self):
+        headers = {"Content-Disposition": 'attachment; filename="system-one-chess-tournament.json"'}
+        return JSONResponse(self._tournament.export(), headers=headers)
+
     @get("/pgn")
     async def pgn(self):
         filename, text = await self._game.pgn()
@@ -156,6 +161,16 @@ class TournamentController:
     async def next_game(self):
         state = await self._tournament.next()
         return {"tournament": self._tournament.view(), "state": state}
+
+    @get("/export")
+    async def export(self):
+        headers = {"Content-Disposition": 'attachment; filename="system-one-chess-tournament.json"'}
+        return JSONResponse(self._tournament.export(), headers=headers)
+
+    @get("/pgn")
+    async def pgn(self):
+        headers = {"Content-Disposition": 'attachment; filename="system-one-chess-tournament.pgn"'}
+        return Response(self._tournament.pgn(), media_type="application/x-chess-pgn", headers=headers)
 
     @delete("")
     async def stop(self):
