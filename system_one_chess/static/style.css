@@ -569,6 +569,9 @@ html:has(dialog[open]) { overflow: hidden; scrollbar-gutter: stable; }
 .chip:has(input:focus-visible) { outline: 3px solid var(--accent); outline-offset: 2px; }
 .chip:has(input:disabled) { opacity: 0.5; cursor: not-allowed; }
 .chip small { font-weight: 400; color: var(--text-muted); }
+.chip-text { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
+.chip-text small { font-size: 0.75rem; max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip { padding: var(--space-1) var(--space-3) var(--space-1) var(--space-2); border-radius: var(--radius); }
 .controls .button { white-space: nowrap; flex: 1 1 auto; }
 
 .board-column { display: flex; flex-direction: column; gap: var(--space-2); width: min(100%, calc(100vh - 2 * var(--space-4) - 45px - 88px)); min-width: 0; }

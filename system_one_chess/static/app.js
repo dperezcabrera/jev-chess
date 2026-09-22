@@ -612,6 +612,7 @@ $('pgn-copy').addEventListener('click', async () => {
 const dialog = $('side-dialog');
 const sideForm = $('side-form');
 let models = [];
+const suggestedTiers = new Map();
 const chosen = { opponent: 'jev', white: 'jev', black: 'jev' };
 const modelName = (id) => (models.find((model) => model.id === id) || { name: id }).name;
 
@@ -969,8 +970,11 @@ function renderParticipants() {
     const chip = document.createElement('label');
     chip.className = 'chip';
     const input = Object.assign(document.createElement('input'), { type: 'checkbox', name: 'participant', value: model.id, disabled: !model.ready, checked: model.ready && (picked.size ? picked.has(model.id) : dialogMode !== 'add' && model.kind === 'system_one') });
-    chip.append(input, logoNode(model), Object.assign(document.createElement('span'), { textContent: model.name }));
-    if (!model.ready) chip.append(Object.assign(document.createElement('small'), { textContent: model.note }));
+    const text = Object.assign(document.createElement('span'), { className: 'chip-text' });
+    const tier = (suggestedTiers.get(model.upstream) || (model.kind === 'system_one' ? 'System One' : 'LLM'));
+    text.append(Object.assign(document.createElement('span'), { className: 'chip-name', textContent: model.name }), Object.assign(document.createElement('small'), { textContent: model.ready ? `${tier} \u00b7 ${model.upstream}` : model.note }));
+    chip.title = model.upstream;
+    chip.append(input, logoNode(model), text);
     return chip;
   }));
   if (!$('rounds-options').children.length) {
@@ -1065,11 +1069,6 @@ $('tournament-add').addEventListener('click', () => openTournamentDialog('add'))
 
 tournamentForm.addEventListener('change', syncTournamentDialog);
 $('tournament-cancel').addEventListener('click', () => tournamentDialog.close());
-$('tournament-manage-models').addEventListener('click', () => {
-  $('models-error').textContent = '';
-  $('models-dialog').showModal();
-  $('models-upstream').focus();
-});
 tournamentForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const current = ++generation;
@@ -1214,10 +1213,12 @@ function renderModels(data) {
     }
   }
   $('models-suggested').replaceChildren(...data.suggested.map((m) => new Option(m.tier, m.upstream)));
+  for (const m of data.suggested) suggestedTiers.set(m.upstream, m.tier);
 }
 
-$('manage-models').addEventListener('click', () => {
+$('settings-models').addEventListener('click', () => {
   $('models-error').textContent = '';
+  loadModels();
   $('models-dialog').showModal();
   $('models-upstream').focus();
 });
