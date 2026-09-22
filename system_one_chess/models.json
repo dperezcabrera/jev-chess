@@ -99,6 +99,7 @@
     "deepseek": "https://unpkg.com/@lobehub/icons-static-png@latest/light/deepseek-color.png",
     "z-ai": "https://unpkg.com/@lobehub/icons-static-png@latest/light/zhipu.png",
     "moonshotai": "https://unpkg.com/@lobehub/icons-static-png@latest/light/moonshot.png",
-    "qwen": "https://unpkg.com/@lobehub/icons-static-png@latest/light/qwen-color.png"
+    "qwen": "https://unpkg.com/@lobehub/icons-static-png@latest/light/qwen-color.png",
+    "kev": "https://github.com/jaredpalmer.png?size=128"
   }
 }

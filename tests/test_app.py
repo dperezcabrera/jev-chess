@@ -30,7 +30,9 @@ def jev_stub(pick):
 @pytest.fixture
 def app(make_container, make_client):
     def build(handler, api_key="test-key"):
-        flat = FlatDictSource({"OPENROUTER_API_KEY": api_key, "JEV_MODEL": "jev-test", "LAYA_ENDPOINT": ""})
+        flat = FlatDictSource(
+            {"OPENROUTER_API_KEY": api_key, "JEV_MODEL": "jev-test", "LAYA_ENDPOINT": "", "KEV_ENDPOINT": ""}
+        )
         config = configuration(flat, DictSource({}))
         container = make_container("system_one_chess", "pico_fastapi", config=config)
         build.container = container
@@ -324,6 +326,7 @@ def laya_app(make_container, make_client, monkeypatch, installed=True, **env):
 
     monkeypatch.setattr(laya_module, "available", lambda: installed)
     env.setdefault("LAYA_ENDPOINT", "")
+    env.setdefault("KEV_ENDPOINT", "")
     container = make_container(
         "system_one_chess", "pico_fastapi", config=configuration(FlatDictSource(env), DictSource({}))
     )
@@ -424,6 +427,7 @@ def llm_app(make_container, make_client, replies, seen, **env):
 
     env.setdefault("TOURNAMENT_DIR", tempfile.mkdtemp(prefix="tournaments-"))
     env.setdefault("LAYA_ENDPOINT", "")
+    env.setdefault("KEV_ENDPOINT", "")
     config = configuration(FlatDictSource({"OPENROUTER_API_KEY": "server-key", **env}), DictSource({}))
     container = make_container("system_one_chess", "pico_fastapi", config=config)
     container.get(LLMApi)._client = httpx.AsyncClient(transport=httpx.MockTransport(llm_stub(replies, seen)))
@@ -438,7 +442,7 @@ def test_models_are_listed_and_llms_are_added_per_session(make_container, make_c
     client = llm_app(make_container, make_client, [], [])
     listed = client.get("/api/models").json()
     configured = [entry["upstream"] for entry in listed["suggested"]]
-    assert [m["id"] for m in listed["models"]] == ["jev", "laya"] + [f"llm:{u}" for u in configured]
+    assert [m["id"] for m in listed["models"]] == ["jev", "laya", "kev"] + [f"llm:{u}" for u in configured]
     assert listed["models"][0]["ready"] and listed["models"][0]["kind"] == "system_one"
     grok = next(m for m in listed["models"] if m["upstream"] == "x-ai/grok-4.7")
     assert grok["ready"] and not grok["removable"], "the models file configures it for every session"
@@ -1080,3 +1084,57 @@ def test_you_can_pause_your_own_clock_while_it_is_your_move(make_container, make
     )
     assert client.post("/api/tournament/board/1/clock/pause").status_code == 409, "only your own clock, on your move"
     assert client.delete("/api/tournament").json()["active"] is False
+
+
+def test_kev_answers_through_its_demo_space_or_a_local_server(make_container, make_client):
+    from system_one_chess.kev import KevModel
+
+    def space(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            data = json.loads(request.content)["data"]
+            assert json.loads(data[0])["game"] == "chess" and data[2] == "Kev-4B" and data[3] is True and data[6] == 2
+            return httpx.Response(200, json={"event_id": "e1"})
+        answer = {
+            "model": "jaredpalmer/kev-4b",
+            "answers": {
+                "move": {"type": "choice", "choice": "d4", "probabilities": {"e4": 0.3, "d4": 0.7}, "confidence": 0.4}
+            },
+            "usage": {"input_tokens": 540, "output_tokens": 0},
+            "latency_ms": 1200,
+        }
+        return httpx.Response(
+            200, text="event: complete\ndata: " + json.dumps(["<div>html</div>", json.dumps(answer), ""]) + "\n\n"
+        )
+
+    client = llm_app(make_container, make_client, [], [], KEV_ENDPOINT="https://kev.test")
+    llm_app.container.get(KevModel)._client = httpx.AsyncClient(transport=httpx.MockTransport(space))
+    kev = next(m for m in client.get("/api/models").json()["models"] if m["id"] == "kev")
+    assert kev["ready"] and kev["provider"] == "huggingface" and kev["upstream"] == "jaredpalmer/kev-4b"
+    client.post("/api/new", json={"human": "black", "white": "kev"})
+    state = client.post("/api/jev").json()
+    assert state["history"] == ["d4"] and state["jev_top"][0] == {"san": "d4", "probability": 0.7}
+    assert state["usage"]["input_tokens"] == 540 and state["usage"]["cost_usd"] == 0.0
+
+    seen = []
+
+    def local(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        seen.append((request.url.path, request.headers.get("authorization"), body["model"]))
+        labels = list(body["questions"]["move"]["criteria"])
+        return httpx.Response(
+            200,
+            json={
+                "answers": {"move": {"choice": labels[0], "probabilities": {labels[0]: 1.0}}},
+                "usage": {"input_tokens": 10, "output_tokens": 0},
+            },
+        )
+
+    client = llm_app(
+        make_container, make_client, [], [], KEV_BASE_URL="http://kev.local:8009", KEV_API_KEY="k", KEV_ENDPOINT=""
+    )
+    llm_app.container.get(KevModel)._client = httpx.AsyncClient(transport=httpx.MockTransport(local))
+    kev = next(m for m in client.get("/api/models").json()["models"] if m["id"] == "kev")
+    assert kev["ready"] and kev["provider"] == "kev" and kev["upstream"] == "kev-latest"
+    client.post("/api/new", json={"human": "black", "white": "kev"})
+    state = client.post("/api/jev").json()
+    assert len(state["history"]) == 1 and seen == [("/v1/systemone", "Bearer k", "kev-latest")]

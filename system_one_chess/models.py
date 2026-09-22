@@ -11,6 +11,8 @@ from pathlib import Path
 import httpx
 from pico_ioc import cleanup, component
 
+from .kev import REMOTE_NOTE as KEV_REMOTE_NOTE
+from .kev import KevModel
 from .laya import REMOTE_NOTE, LayaModel
 from .provider import JevProvider, SessionCredentials
 from .settings import LLMSettings, ModelsSettings
@@ -111,9 +113,12 @@ def llm_name(upstream: str) -> str:
 
 @component
 class ModelRegistry:
-    def __init__(self, provider: JevProvider, settings: ModelsSettings, llm: LLMSettings, laya: LayaModel):
+    def __init__(
+        self, provider: JevProvider, settings: ModelsSettings, llm: LLMSettings, laya: LayaModel, kev: KevModel
+    ):
         self._provider = provider
         self._laya = laya
+        self._kev = kev
         self._file = Path(settings.file) if settings.file else DEFAULT_MODELS_FILE
         self._default_reasoning = {"effort": llm.reasoning_effort} if llm.reasoning_effort else None
 
@@ -135,7 +140,7 @@ class ModelRegistry:
     def name_of(self, model_id: str) -> str:
         if model_id == "human":
             return "You"
-        return {"jev": "Jev", "laya": "Laya"}.get(model_id) or llm_name(model_id)
+        return {"jev": "Jev", "laya": "Laya", "kev": "Kev"}.get(model_id) or llm_name(model_id)
 
     def logo_of(self, model_id: str) -> str:
         return logo_path(model_id, read_models_file(self._file)["logos"]) if model_id != "human" else ""
@@ -166,6 +171,16 @@ class ModelRegistry:
                 mode != "none",
                 {"local": "", "remote": REMOTE_NOTE, "none": "not installed"}[mode],
                 logo_path("laya", logos),
+            ),
+            Model(
+                "kev",
+                "Kev",
+                "system_one",
+                "kev" if self._kev.mode == "local" else "huggingface",
+                self._kev.upstream,
+                self._kev.ready,
+                {"local": "", "remote": KEV_REMOTE_NOTE, "none": "not configured"}[self._kev.mode],
+                logo_path("kev", logos),
             ),
         ]
         configured = [entry["upstream"] for entry in file["suggested"]]

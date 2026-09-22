@@ -6,6 +6,8 @@ import chess
 import httpx
 from pico_ioc import cleanup, component
 
+from .kev import NOT_CONFIGURED as KEV_NOT_CONFIGURED
+from .kev import KevModel
 from .laya import LayaModel
 from .llm import IllegalAnswers, LLMApi, LLMError
 from .models import ModelRegistry
@@ -143,10 +145,12 @@ class JevMoveChooser:
         llm: LLMApi,
         illegal: IllegalMovesSettings,
         registry: ModelRegistry | None = None,
+        kev: KevModel | None = None,
     ):
         self._api = api
         self._provider = provider
         self._laya = laya
+        self._kev = kev
         self._llm = llm
         self._illegal_limit = max(1, illegal.limit)
         self._registry = registry
@@ -154,6 +158,8 @@ class JevMoveChooser:
     def model_for(self, credentials: SessionCredentials | None = None, model: str = "") -> str:
         if model.startswith("llm:"):
             return model[4:]
+        if model == "kev":
+            return self._kev.upstream if self._kev else "kev"
         return self._provider.gateway(credentials, model).model
 
     async def ask(
@@ -172,9 +178,14 @@ class JevMoveChooser:
         spellings of the labels an LLM may use, which do not count as illegal."""
         if model.startswith("llm:"):
             return await self._ask_llm(board, instructions, criteria, credentials, model[4:], illegal_so_far, aliases)
-        gateway = self._provider.gateway(credentials, model)
-        if not gateway.ready:
-            raise JevError(NO_KEY)
+        if model == "kev":
+            if self._kev is None or not self._kev.ready:
+                raise JevError(KEV_NOT_CONFIGURED)
+            gateway = Gateway("kev", "", "", self._kev.upstream, 0.0, False)
+        else:
+            gateway = self._provider.gateway(credentials, model)
+            if not gateway.ready:
+                raise JevError(NO_KEY)
         if gateway.local and len(criteria) > 8:
             criteria = dict.fromkeys(criteria)
         state = _state(board)
@@ -182,7 +193,10 @@ class JevMoveChooser:
         started = time.perf_counter()
         try:
             body = {"model": gateway.model, "state": state, "questions": {"move": question}}
-            response = await (self._laya.system_one(body) if gateway.local else self._api.system_one(gateway, body))
+            if model == "kev":
+                response = await self._kev.system_one(body)
+            else:
+                response = await (self._laya.system_one(body) if gateway.local else self._api.system_one(gateway, body))
             answer = response["answers"]["move"]
             choice = answer["choice"]
         except httpx.HTTPStatusError as e:

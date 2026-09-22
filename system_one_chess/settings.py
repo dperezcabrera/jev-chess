@@ -28,6 +28,17 @@ class LayaSettings:
     endpoint: str = "https://convaiinnovations-laya-demo.hf.space"
 
 
+@configured(prefix="KEV_", mapping="flat")
+@dataclass
+class KevSettings:
+    base_url: str = ""
+    api_key: str = ""
+    model: str = "kev-latest"
+    endpoint: str = "https://jaredpalmer-kev.hf.space"
+    size: str = "Kev-4B"
+    timeout_seconds: float = 120.0
+
+
 @configured(prefix="JEV_", mapping="flat")
 @dataclass
 class JevSettings:

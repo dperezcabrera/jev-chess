@@ -70,6 +70,18 @@ Without the package, Laya still plays: the server asks Convai's public [demo Spa
 
 One difference matters when comparing the two models. Laya has a budget of 192 tokens for all the options of a question, and a chess position with 30 legal moves described the way Jev gets them ("knight g8 to f6, gives check") needs about 400. So Laya receives the moves as bare labels in standard notation, `Nf6+`, which still carry captures, checks and mates, but not the "can be captured next turn" hint. Jev keeps the full descriptions. The measurements in this README are Jev's.
 
+## Kev, the other open System One model
+
+[Kev](https://github.com/jaredpalmer/kev) (Jared Palmer, Apache-2.0) is a family of open System One models built on Qwen3.5, in 0.8B, 4B and 9B sizes, that speak TypeSafe's `/v1/systemone` protocol, so it plays here as a third System One model with full move descriptions and up to 255 options. By default it answers through its public [demo Space](https://huggingface.co/spaces/jaredpalmer/kev) on Hugging Face (`KEV_ENDPOINT`, empty turns it off; `KEV_SIZE` picks `Kev-0.8B` or `Kev-4B`, about 7 to 10 seconds a move on the shared GPU). To run it yourself, start its server and point `KEV_BASE_URL` at it, with `KEV_API_KEY` if you set one there and `KEV_MODEL` for the model name it serves:
+
+```sh
+git clone https://github.com/jaredpalmer/kev.git && cd kev && uv sync --extra serve
+uv run --extra serve python -m kev.serve --run jaredpalmer/kev-0.8b --port 8009
+KEV_BASE_URL=http://127.0.0.1:8009 system-one-chess
+```
+
+The 0.8B model runs on a CPU with a few gigabytes of memory; the 4B and 9B want 16 to 32 GB.
+
 ## Getting a key
 
 Jev is served by two gateways with the same request format and the same list price, $0.042 per million input tokens with free output. Either one works; set a single variable.
@@ -127,6 +139,8 @@ Then run:
 | `OPENROUTER_API_KEY` | one of the two | Your OpenRouter key |
 | `JEV_PROVIDER` | the gateway whose key is set | `vercel` or `openrouter`, only needed when both keys are set |
 | `LAYA_MODEL`, `LAYA_DEVICE` | `convaiinnovations/laya`, auto | The local model and where it runs |
+| `KEV_BASE_URL`, `KEV_API_KEY`, `KEV_MODEL` | unset, unset, `kev-latest` | A `kev.serve` of your own; when set it is used instead of the Space |
+| `KEV_ENDPOINT`, `KEV_SIZE` | Kev's demo Space, `Kev-4B` | Where Kev is asked otherwise, and which size; empty turns it off |
 | `LAYA_ENDPOINT` | Convai's demo Space | Where Laya is asked when it is not installed locally; empty turns it off |
 | `JEV_MODEL` | `typesafe-ai/jev` on Vercel, `jev-latest` on OpenRouter | Model ID, for example `jev-1.13` on OpenRouter to pin a version |
 | `AI_GATEWAY_BASE_URL` | `https://ai-gateway.vercel.sh/typesafe` | Vercel's TypeSafe-compatible base URL |

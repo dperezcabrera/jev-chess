@@ -1165,7 +1165,7 @@ function renderSegments() {
       const input = Object.assign(document.createElement('input'), { type: 'radio', name, value: model.id, checked: model.id === chosen[name], disabled: !model.ready });
       const title = Object.assign(document.createElement('span'), { className: 'model-head' });
       title.append(logoNode(model), Object.assign(document.createElement('span'), { className: 'model-head-name', textContent: model.name }));
-      const note = Object.assign(document.createElement('small'), { textContent: model.ready ? (model.kind === 'llm' ? 'LLM' : model.provider === 'laya' ? 'local' : model.provider === 'huggingface' ? 'HF Space' : 'cloud') : model.note });
+      const note = Object.assign(document.createElement('small'), { textContent: model.ready ? (model.kind === 'llm' ? 'LLM' : model.provider === 'laya' || model.provider === 'kev' ? 'local' : model.provider === 'huggingface' ? 'HF Space' : 'cloud') : model.note });
       label.append(input, title, note);
       return label;
     }));
@@ -1248,7 +1248,7 @@ function renderModels(data) {
     kind.append(Object.assign(document.createElement('span'), { className: `kind-badge kind-${model.kind}`, textContent: model.kind === 'llm' ? 'LLM' : 'System One' }));
     const runs = row.insertCell();
     runs.className = 'col-text';
-    runs.textContent = { openrouter: 'OpenRouter', vercel: 'Vercel AI Gateway', laya: 'this server', huggingface: 'Hugging Face Space' }[model.provider] || model.provider;
+    runs.textContent = { openrouter: 'OpenRouter', vercel: 'Vercel AI Gateway', laya: 'this server', kev: 'your Kev server', huggingface: 'Hugging Face Space' }[model.provider] || model.provider;
     const ready = row.insertCell();
     ready.className = 'col-badge';
     ready.append(Object.assign(document.createElement('span'), { className: model.ready ? 'ready-yes' : 'ready-no', textContent: model.ready ? 'yes' : model.note }));
