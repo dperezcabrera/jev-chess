@@ -12,7 +12,7 @@ Jev does not generate text. It answers typed questions about a state with calibr
 
 - **A real board.** [chessground](https://github.com/lichess-org/chessground), the open source board from lichess: drag or click, legal moves only.
 - **Jev's confidence, every move.** The side panel shows the three options Jev weighed and the probability it gave each one.
-- **Cost and latency, live.** The footer adds up Jev calls, tokens, average latency and dollars for the current game, straight from the gateway's usage data. Jev playing both sides costs about $0.00005 per move at 300 to 400 ms each: a 20-move game for $0.0009.
+- **Cost and latency, live.** The footer shows calls, tokens, average latency, illegal answers and dollars for the current game, straight from the gateway's usage data, one row per model when two of them play and a total underneath. Jev playing both sides costs about $0.00005 per move at 300 to 400 ms each: a 20-move game for $0.0009.
 - **Engine analysis in your browser.** Stockfish 19 (WebAssembly, 1.8 MB) evaluates the game locally: evaluation chart, average centipawn loss (how many hundredths of a pawn each move gives away, see [Reading the numbers](#reading-the-numbers)), inaccuracies, mistakes and blunders per player. No server cost, no extra API calls. Depth is configurable.
 - **Is Jev better than chance?** For every position, Stockfish scores all legal moves and ranks the one that was played. A random mover sits on the 50th percentile by definition, so anything above that is signal. Two breakdowns sit next to what a random mover would score. By distance: the share of moves within 10, 25, 50, 100 and 200 centipawns of the best one, the absolute reference. By percentile range: top move, top 3 moves, top 2%, 5%, 10%, 20%, 30% and 50%, each with its average and its worst loss, because a top range can still hold a terrible move when a position has only one good one.
 - **LLMs at the same table.** Any chat model on OpenRouter can take a colour: add it by id in the Models dialog and it gets the same position, the same list of legal moves and the same instructions as Jev, through the chat API. Its tokens and cost count toward the game like Jev's, so a cheap model, a frontier model and a System One model can be compared per game. See [LLM opponents](#llm-opponents).
@@ -261,6 +261,12 @@ node --test tests/analysis.test.mjs
 ```
 
 Tests run offline: the Jev HTTP client is backed by an `httpx.MockTransport`, so the full path from controller to request body is exercised without a network or a key. The Node test covers the analysis math (percentiles, deciles, top groups, judgements) and needs no dependencies.
+
+To click through the interface without keys, `tests/fake_app.py` serves the real app with every model faked: Jev and Laya pick a random legal move, an LLM names a random label, and the model id `bad/model` always answers illegally, so forfeits and the tournament can be watched at speed.
+
+```sh
+.venv/bin/uvicorn --app-dir tests fake_app:create_app --factory --port 8767
+```
 
 ### Publishing the image
 

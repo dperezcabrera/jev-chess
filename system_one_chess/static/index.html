@@ -268,13 +268,20 @@
   </section>
 
   <footer class="usage" aria-label="Model usage for this game">
-    <dl>
-      <div><dt>Model calls</dt><dd id="usage-calls">0</dd></div>
-      <div><dt>Input tokens</dt><dd id="usage-input">0</dd></div>
-      <div><dt>Output tokens</dt><dd id="usage-output">0</dd></div>
-      <div><dt>Avg. latency</dt><dd id="usage-latency">&ndash;</dd></div>
-      <div><dt>Cost</dt><dd id="usage-cost">$0.000000</dd></div>
-    </dl>
+    <table class="usage-table">
+      <thead>
+        <tr>
+          <th class="col-text" scope="col">Player</th>
+          <th class="col-num" scope="col">Model calls</th>
+          <th class="col-num" scope="col">Input tokens</th>
+          <th class="col-num" scope="col">Output tokens</th>
+          <th class="col-num" scope="col">Avg. latency</th>
+          <th class="col-num" scope="col">Illegal</th>
+          <th class="col-num" scope="col">Cost</th>
+        </tr>
+      </thead>
+      <tbody id="usage-rows"></tbody>
+    </table>
   </footer>
 
   <p class="credits">

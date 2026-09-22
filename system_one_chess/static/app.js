@@ -113,7 +113,7 @@ function render(state) {
   });
   current = state;
   currentHuman = state.human;
-  renderUsage(state.usage);
+  renderUsage(state);
   syncAnalysis(state);
   $('game-id').textContent = state.game_id;
   renderDecision(state.jev_top);
@@ -130,12 +130,33 @@ function render(state) {
   maybeContinueTournament(state);
 }
 
-function renderUsage(usage) {
-  $('usage-calls').textContent = usage.calls.toLocaleString('en-US');
-  $('usage-input').textContent = usage.input_tokens.toLocaleString('en-US');
-  $('usage-output').textContent = usage.output_tokens.toLocaleString('en-US');
-  $('usage-latency').textContent = usage.calls ? `${Math.round((usage.seconds / usage.calls) * 1000)} ms` : '\u2013';
-  $('usage-cost').textContent = `$${usage.cost_usd.toFixed(6)}`;
+function usageCells(row, usage) {
+  const latency = usage.calls ? `${Math.round((usage.seconds / usage.calls) * 1000)} ms` : '\u2013';
+  for (const value of [usage.calls.toLocaleString('en-US'), usage.input_tokens.toLocaleString('en-US'), usage.output_tokens.toLocaleString('en-US'), latency, usage.illegal, `$${usage.cost_usd.toFixed(6)}`]) {
+    Object.assign(row.insertCell(), { className: 'col-num', textContent: value });
+  }
+}
+
+function renderUsage(state) {
+  const body = $('usage-rows');
+  body.replaceChildren();
+  const sides = ['white', 'black'].filter((colour) => state.human !== colour);
+  for (const colour of sides) {
+    const row = body.insertRow();
+    const cell = row.insertCell();
+    cell.className = 'col-text';
+    const player = playerOf(state, colour);
+    const head = Object.assign(document.createElement('span'), { className: 'model-head' });
+    head.append(logoNode(player), Object.assign(document.createElement('span'), { className: 'model-head-name', textContent: `${player.name} (${colour})`, title: player.id }));
+    cell.append(head);
+    usageCells(row, state.usage_by_colour[colour]);
+  }
+  if (sides.length > 1) {
+    const row = body.insertRow();
+    row.className = 'total';
+    Object.assign(row.insertCell(), { className: 'col-text', textContent: 'Both' });
+    usageCells(row, state.usage);
+  }
 }
 
 function setAnalysisMessage(text, { error = false } = {}) {

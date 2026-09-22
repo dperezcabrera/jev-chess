@@ -45,7 +45,8 @@ class Game:
         self._illegal = {chess.WHITE: 0, chess.BLACK: 0}
         self._cost = {chess.WHITE: 0.0, chess.BLACK: 0.0}
         self._jev_top: list[dict] = []
-        self._usage = {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0, "seconds": 0.0, "illegal": 0}
+        self._usage = self._empty_usage()
+        self._usage_by_colour = {chess.WHITE: self._empty_usage(), chess.BLACK: self._empty_usage()}
 
     async def new(self, human: str, white: str = "jev", black: str = "jev") -> dict:
         if human not in COLORS:
@@ -126,13 +127,18 @@ class Game:
                 "cost": dict(self._cost),
             }
 
+    @staticmethod
+    def _empty_usage() -> dict:
+        return {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0, "seconds": 0.0, "illegal": 0}
+
     def _count(self, usage) -> None:
-        self._usage["calls"] += 1
-        self._usage["input_tokens"] += usage.input_tokens
-        self._usage["output_tokens"] += usage.output_tokens
-        self._usage["cost_usd"] += usage.cost_usd
-        self._usage["seconds"] += usage.seconds
-        self._usage["illegal"] += usage.illegal
+        for totals in (self._usage, self._usage_by_colour[self._board.turn]):
+            totals["calls"] += 1
+            totals["input_tokens"] += usage.input_tokens
+            totals["output_tokens"] += usage.output_tokens
+            totals["cost_usd"] += usage.cost_usd
+            totals["seconds"] += usage.seconds
+            totals["illegal"] += usage.illegal
         self._illegal[self._board.turn] += usage.illegal
         self._cost[self._board.turn] += usage.cost_usd
 
@@ -199,5 +205,9 @@ class Game:
             "history": history,
             "moves_uci": [move.uci() for move in board.move_stack],
             "usage": dict(self._usage),
+            "usage_by_colour": {
+                "white": dict(self._usage_by_colour[chess.WHITE]),
+                "black": dict(self._usage_by_colour[chess.BLACK]),
+            },
             "jev_top": self._jev_top,
         }

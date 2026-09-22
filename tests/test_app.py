@@ -458,6 +458,15 @@ def test_an_llm_plays_a_colour_through_the_chat_api_and_its_cost_is_counted(make
     state = client.post("/api/jev").json()
     assert state["history"] == ["e4", "e5"] and state["jev_top"] == []
     assert state["usage"]["calls"] == 1 and state["usage"]["cost_usd"] == pytest.approx(0.0009)
+    assert state["usage_by_colour"]["black"]["cost_usd"] == pytest.approx(0.0009)
+    assert state["usage_by_colour"]["white"] == {
+        "calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cost_usd": 0.0,
+        "seconds": 0.0,
+        "illegal": 0,
+    }
     request = seen[0]
     assert request["url"].endswith("/v1/chat/completions") and request["model"] == "openai/gpt-5-mini"
     assert '"choice"' in request["messages"][0]["content"] and "- e5" in request["messages"][1]["content"]

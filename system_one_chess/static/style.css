@@ -276,10 +276,15 @@ select {
 .credits a, .analysis-note a { color: var(--text); text-underline-offset: 3px; }
 
 .usage { padding: var(--space-3) var(--space-4); }
-.usage dl { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-3); margin: 0; }
-.usage dt, .usage dd { text-align: right; }
-.usage dt { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
-.usage dd { margin: 0; font-size: 1.125rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.usage-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.usage-table th, .usage-table td { height: 36px; padding: 0 var(--space-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.usage-table th { border-bottom: 1px solid var(--border); font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+.usage-table .col-text { text-align: left; }
+.usage-table .col-num { text-align: right; font-variant-numeric: tabular-nums; }
+.usage-table td.col-num { font-size: 1.0625rem; font-weight: 600; }
+.usage-table th:first-child, .usage-table td:first-child { width: 22%; }
+.usage-table tr.total td { border-top: 1px solid var(--border); color: var(--text-muted); font-weight: 500; }
+.usage-table .model-head { max-width: 100%; }
 
 .moves .judged { color: var(--text-muted); font-weight: 600; }
 
