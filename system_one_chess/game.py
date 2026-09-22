@@ -1,4 +1,5 @@
 import asyncio
+import time
 import uuid
 from datetime import UTC, datetime
 
@@ -46,6 +47,7 @@ class Game:
         self._jev_top: list[dict] = []
         self._moves: list[dict] = []
         self._deciding = False
+        self._turn_started = time.monotonic()
         self._usage = self._empty_usage()
         self._usage_by_colour = {chess.WHITE: self._empty_usage(), chess.BLACK: self._empty_usage()}
 
@@ -76,15 +78,19 @@ class Game:
                 raise IllegalMove("malformed move") from e
             if move not in board.legal_moves:
                 raise IllegalMove(f"illegal move: {origin}{target}")
+            seconds = time.monotonic() - self._turn_started
+            self._usage_by_colour[board.turn]["seconds"] += seconds
             self._moves.append(
                 {
                     "ply": len(board.move_stack) + 1,
                     "colour": self._colour_name(board.turn),
                     "player": "human",
                     "san": board.san(move),
+                    "seconds": seconds,
                 }
             )
             board.push(move)
+            self._turn_started = time.monotonic()
             self._finish()
             return self._snapshot()
 
@@ -119,6 +125,7 @@ class Game:
                     {**self._move_record(self._board, decision), "san": decision.san, "top": decision.top}
                 )
                 self._board.push(decision.move)
+                self._turn_started = time.monotonic()
                 self._finish()
                 return self._snapshot()
         finally:
@@ -282,6 +289,7 @@ class Game:
             "result": result,
             "history": history,
             "moves_uci": [move.uci() for move in board.move_stack],
+            "thinking_seconds": 0.0 if over else time.monotonic() - self._turn_started,
             "usage": dict(self._usage),
             "usage_by_colour": {
                 "white": dict(self._usage_by_colour[chess.WHITE]),

@@ -469,6 +469,7 @@ class Tournament:
                 "human": state["human"],
                 "humans_turn": state["humans_turn"],
                 "clock": {"white": usage["white"]["seconds"], "black": usage["black"]["seconds"]},
+                "thinking_seconds": state["thinking_seconds"],
                 "thinking_since": entry["thinking_since"],
                 "error": entry["error"],
             }

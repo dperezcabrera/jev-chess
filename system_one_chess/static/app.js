@@ -90,11 +90,14 @@ function orientationOf(state) {
 }
 
 let thinkingSince = null;
+let stateReceivedAt = 0;
 
 function clockSeconds(state, colour) {
   const used = state.usage_by_colour ? state.usage_by_colour[colour].seconds : 0;
-  const live = !state.over && state.turn === colour && state.human !== colour && thinkingSince ? (Date.now() - thinkingSince) / 1000 : 0;
-  return used + live;
+  if (state.over || state.turn !== colour) return used;
+  const base = typeof state.thinking_seconds === 'number' ? state.thinking_seconds : 0;
+  const since = stateReceivedAt || (thinkingSince || Date.now());
+  return used + base + Math.max(0, Date.now() - since) / 1000;
 }
 
 const clockText = (state, colour) => {
@@ -117,17 +120,23 @@ function renderPlayers(state) {
     const player = playerOf(state, colour);
     const toMove = !state.over && state.turn === colour;
     bar.classList.toggle('to-move', toMove);
-    const swatch = Object.assign(document.createElement('span'), { className: `player-colour ${colour}` });
-    swatch.setAttribute('aria-hidden', 'true');
-    const note = Object.assign(document.createElement('span'), { className: 'player-note', textContent: state.over ? (state.result || '').split(' ')[0] : toMove ? 'to move' : colour });
-    const clock = Object.assign(document.createElement('span'), { className: 'player-clock', textContent: clockText(state, colour) });
-    clock.dataset.colour = colour;
-    clock.title = 'Time spent deciding in this game';
-    bar.replaceChildren(swatch, logoNode(player), Object.assign(document.createElement('span'), { className: 'player-name', textContent: player.name, title: player.id }), clock, note);
+    const key = `${colour}:${player.id}:${player.logo}`;
+    if (bar.dataset.key !== key) {
+      const swatch = Object.assign(document.createElement('span'), { className: `player-colour ${colour}` });
+      swatch.setAttribute('aria-hidden', 'true');
+      const clock = Object.assign(document.createElement('span'), { className: 'player-clock' });
+      clock.dataset.colour = colour;
+      clock.title = 'Time spent deciding in this game';
+      bar.replaceChildren(swatch, logoNode(player), Object.assign(document.createElement('span'), { className: 'player-name', textContent: player.name, title: player.id }), clock, Object.assign(document.createElement('span'), { className: 'player-note' }));
+      bar.dataset.key = key;
+    }
+    bar.querySelector('.player-clock').textContent = clockText(state, colour);
+    bar.querySelector('.player-note').textContent = state.over ? (state.result || '').split(' ')[0] : toMove ? 'to move' : colour;
   }
 }
 
 function render(state) {
+  stateReceivedAt = Date.now();
   renderPlayers(state);
   ground.set({
     fen: state.fen,
@@ -166,25 +175,39 @@ function usageCells(row, usage) {
   }
 }
 
+function usageValues(usage) {
+  const latency = usage.calls ? `${Math.round((usage.seconds / usage.calls) * 1000)} ms` : '\u2013';
+  return [usage.calls.toLocaleString('en-US'), usage.input_tokens.toLocaleString('en-US'), usage.output_tokens.toLocaleString('en-US'), latency, usage.illegal, `$${usage.cost_usd.toFixed(6)}`];
+}
+
 function renderUsage(state) {
   const body = $('usage-rows');
-  body.replaceChildren();
   const sides = ['white', 'black'].filter((colour) => state.human !== colour);
-  for (const colour of sides) {
-    const row = body.insertRow();
-    const cell = row.insertCell();
-    cell.className = 'col-text';
-    const player = playerOf(state, colour);
-    const head = Object.assign(document.createElement('span'), { className: 'model-head' });
-    head.append(logoNode(player), Object.assign(document.createElement('span'), { className: 'model-head-name', textContent: `${player.name} (${colour})`, title: player.id }));
-    cell.append(head);
-    usageCells(row, state.usage_by_colour[colour]);
+  const key = sides.map((colour) => `${colour}:${state.models[colour]}`).join('|');
+  if (body.dataset.key !== key) {
+    body.replaceChildren();
+    for (const colour of sides) {
+      const row = body.insertRow();
+      row.dataset.colour = colour;
+      const cell = row.insertCell();
+      cell.className = 'col-text';
+      const player = playerOf(state, colour);
+      const head = Object.assign(document.createElement('span'), { className: 'model-head' });
+      head.append(logoNode(player), Object.assign(document.createElement('span'), { className: 'model-head-name', textContent: `${player.name} (${colour})`, title: player.id }));
+      cell.append(head);
+      for (let i = 0; i < 6; i++) Object.assign(row.insertCell(), { className: 'col-num' });
+    }
+    if (sides.length > 1) {
+      const row = body.insertRow();
+      row.className = 'total';
+      Object.assign(row.insertCell(), { className: 'col-text', textContent: 'Both' });
+      for (let i = 0; i < 6; i++) Object.assign(row.insertCell(), { className: 'col-num' });
+    }
+    body.dataset.key = key;
   }
-  if (sides.length > 1) {
-    const row = body.insertRow();
-    row.className = 'total';
-    Object.assign(row.insertCell(), { className: 'col-text', textContent: 'Both' });
-    usageCells(row, state.usage);
+  for (const row of body.rows) {
+    const values = usageValues(row.classList.contains('total') ? state.usage : state.usage_by_colour[row.dataset.colour]);
+    values.forEach((value, i) => { row.cells[i + 1].textContent = value; });
   }
 }
 
@@ -655,20 +678,30 @@ function renderTournament(view) {
   progress.value = view.rounds.length ? (view.round - 1) * Math.max(1, view.boards_total) + view.boards_finished : 0;
   progress.max = total || 1;
   const top = $('tournament-top');
-  top.replaceChildren();
-  for (const row of view.standings) {
-    const li = document.createElement('li');
-    li.append(Object.assign(document.createElement('span'), { className: 'top-rank', textContent: row.rank }), playerNode(row), Object.assign(document.createElement('span'), { className: 'top-points', textContent: row.points % 1 ? row.points.toFixed(1) : row.points }));
-    top.append(li);
+  const topKey = view.standings.map((row) => `${row.id}:${row.points}:${row.rank}`).join('|');
+  if (top.dataset.key !== topKey) {
+    top.replaceChildren();
+    for (const row of view.standings) {
+      const li = document.createElement('li');
+      li.append(Object.assign(document.createElement('span'), { className: 'top-rank', textContent: row.rank }), playerNode(row), Object.assign(document.createElement('span'), { className: 'top-points', textContent: row.points % 1 ? row.points.toFixed(1) : row.points }));
+      top.append(li);
+    }
+    top.dataset.key = topKey;
   }
   renderBoards(view);
-  renderStandingsDialog(view);
-  renderRoundsDialog(view);
+  if ($('standings-dialog').open) renderStandingsDialog(view);
+  if ($('rounds-dialog').open) renderRoundsDialog(view);
 }
 
-$('open-standings').addEventListener('click', () => $('standings-dialog').showModal());
+$('open-standings').addEventListener('click', () => {
+  if (tournament) renderStandingsDialog(tournament);
+  $('standings-dialog').showModal();
+});
 $('standings-close').addEventListener('click', () => $('standings-dialog').close());
-$('open-rounds').addEventListener('click', () => $('rounds-dialog').showModal());
+$('open-rounds').addEventListener('click', () => {
+  if (tournament) renderRoundsDialog(tournament);
+  $('rounds-dialog').showModal();
+});
 $('rounds-close').addEventListener('click', () => $('rounds-dialog').close());
 
 async function loadTournament() {
@@ -698,18 +731,29 @@ function miniNode(board, view) {
     minis.set(board.board, mini);
   }
   const orientation = board.human === 'black' ? 'black' : 'white';
-  mini.ground.set({ fen: board.fen, lastMove: board.last_move || undefined, orientation, check: board.check });
+  if (mini.fen !== board.fen || mini.orientation !== orientation) {
+    mini.ground.set({ fen: board.fen, lastMove: board.last_move || undefined, orientation, check: board.check });
+    mini.fen = board.fen;
+    mini.orientation = orientation;
+  }
   const topColour = orientation === 'white' ? 'black' : 'white';
   const row = (colour, el) => {
     const player = board[colour];
-    const live = board.thinking_since && !board.over && board.turn === colour ? Math.max(0, view.now - board.thinking_since) : 0;
+    const key = `${player.id}:${player.logo}`;
+    if (el.dataset.key !== key) {
+      el.replaceChildren(playerNode(player), Object.assign(document.createElement('span'), { className: 'mini-clock' }));
+      el.dataset.key = key;
+    }
+    const live = !board.over && board.turn === colour ? (board.thinking_seconds || 0) : 0;
     const total = Math.round(board.clock[colour] + live);
-    el.replaceChildren(playerNode(player), Object.assign(document.createElement('span'), { className: `mini-clock${!board.over && board.turn === colour ? ' active' : ''}`, textContent: `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}` }));
+    const clock = el.querySelector('.mini-clock');
+    clock.classList.toggle('active', !board.over && board.turn === colour);
+    clock.textContent = `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
   };
   row(topColour, mini.top);
   row(orientation, mini.bottom);
   const text = board.error ? 'stopped, click to retry' : board.over ? board.result : board.humans_turn ? 'your move' : `move ${Math.floor(board.ply / 2) + 1}, ${board[board.turn].name} thinking`;
-  mini.status.textContent = text;
+  if (mini.status.textContent !== text) mini.status.textContent = text;
   mini.status.className = `mini-status${board.error ? ' is-error' : board.humans_turn ? ' is-yours' : board.over ? ' is-over' : ''}`;
   mini.root.classList.toggle('selected', board.board === selectedBoard && !selectedRound);
   mini.root.setAttribute('aria-pressed', String(board.board === selectedBoard && !selectedRound));
