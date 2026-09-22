@@ -345,7 +345,7 @@ function syncProviderFields() {
   const installed = settingsView && settingsView.laya_installed;
   hint.textContent = installed
     ? 'Laya is an open-source decision model (Apache-2.0) that runs on this server. The first move loads it, which takes a while.'
-    : "Laya is not installed on this server. Install it with pip install 'jev-chess[laya]' and restart.";
+    : "Laya is not installed on this server. Install it with pip install 'system-one-chess[laya]' and restart.";
 }
 
 async function settingsRequest(method, body) {

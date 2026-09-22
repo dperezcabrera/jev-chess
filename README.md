@@ -1,6 +1,6 @@
 # How good is a [System One model](https://docs.typesafe.ai/concepts/system-one) at chess? ([Jev](https://typesafe.ai), [Laya](https://huggingface.co/convaiinnovations/laya))
 
-`jev-chess`: play chess in your browser against [Jev](https://typesafe.ai), TypeSafe AI's System One model, called through [Vercel AI Gateway](https://vercel.com/ai-gateway/models/jev) or [OpenRouter](https://openrouter.ai/typesafe).
+`system-one-chess`: play chess in your browser against [Jev](https://typesafe.ai), TypeSafe AI's System One model, called through [Vercel AI Gateway](https://vercel.com/ai-gateway/models/jev) or [OpenRouter](https://openrouter.ai/typesafe).
 
 Jev does not generate text. It answers typed questions about a state with calibrated probabilities. That maps cleanly onto chess: every turn is **one Choice question whose options are the legal moves**. A chess position has at most 218 legal moves and a Choice accepts up to 255 options, so a single request always fits and Jev can never return an illegal move. A typical reply takes about 300 ms.
 
@@ -30,8 +30,8 @@ In the game above Jev plays both sides and draws by repetition after 10 moves ea
 You only need Docker and one API key, from either gateway (see [Getting a key](#getting-a-key)). A prebuilt image is published on the GitHub Container Registry, so there is nothing to build:
 
 ```sh
-docker pull ghcr.io/dperezcabrera/jev-chess:latest
-docker run --rm -p 127.0.0.1:8000:8000 -e AI_GATEWAY_API_KEY=... ghcr.io/dperezcabrera/jev-chess:latest
+docker pull ghcr.io/dperezcabrera/system-one-chess:latest
+docker run --rm -p 127.0.0.1:8000:8000 -e AI_GATEWAY_API_KEY=... ghcr.io/dperezcabrera/system-one-chess:latest
 ```
 
 With an OpenRouter key, pass `-e OPENROUTER_API_KEY=sk-or-...` instead. The app uses whichever key it finds.
@@ -41,7 +41,7 @@ Open http://localhost:8000.
 If the key is already exported in your shell, pass it through without typing it:
 
 ```sh
-docker run --rm -p 127.0.0.1:8000:8000 -e AI_GATEWAY_API_KEY -e OPENROUTER_API_KEY ghcr.io/dperezcabrera/jev-chess:latest
+docker run --rm -p 127.0.0.1:8000:8000 -e AI_GATEWAY_API_KEY -e OPENROUTER_API_KEY ghcr.io/dperezcabrera/system-one-chess:latest
 ```
 
 Available tags: `latest` and the version number, such as `0.3.1`.
@@ -49,8 +49,8 @@ Available tags: `latest` and the version number, such as `0.3.1`.
 To build the image yourself instead:
 
 ```sh
-docker build -t jev-chess .
-docker run --rm -p 127.0.0.1:8000:8000 -e OPENROUTER_API_KEY jev-chess
+docker build -t system-one-chess .
+docker run --rm -p 127.0.0.1:8000:8000 -e OPENROUTER_API_KEY system-one-chess
 ```
 
 Or keep it in a `.env` file (see below) and use `--env-file .env`.
@@ -91,8 +91,8 @@ A key entered this way is sent to the server, held in memory for that browser se
 Requires Python 3.11+.
 
 ```sh
-git clone https://github.com/dperezcabrera/jev-chess.git
-cd jev-chess
+git clone https://github.com/dperezcabrera/system-one-chess.git
+cd system-one-chess
 python3 -m venv .venv
 .venv/bin/pip install -e .
 cp .env.example .env
@@ -113,7 +113,7 @@ OPENROUTER_API_KEY=sk-or-...
 Then run:
 
 ```sh
-.venv/bin/jev-chess
+.venv/bin/system-one-chess
 ```
 
 `.env` is git-ignored, so the key never ends up in the repository. Variables already set in your shell take precedence over `.env`.
@@ -178,16 +178,16 @@ The backend is built with the [pico framework](https://github.com/dperezcabrera/
 
 | Module | Role |
 |---|---|
-| `jev_chess/settings.py` | `@configured` dataclasses bound to environment variables |
-| `jev_chess/provider.py` | `JevProvider` resolves the gateway for a request: the session's own choice and key if the browser set one, else the server's. It hides what differs between gateways: base URL, default model and where the cost is reported. `SessionCredentials` is the session-scoped holder of a key typed in the browser |
-| `jev_chess/laya.py` | The local Laya model, loaded once per process on first use, off the event loop |
-| `jev_chess/jev.py` | `JevApi`, the one place that talks HTTP to a gateway, and `JevMoveChooser`, which turns a position into a Choice question |
-| `jev_chess/game.py` | `Game`, a session-scoped `@component` holding one board per browser session |
-| `jev_chess/api.py` | `@controller` classes for the JSON API and the page, plus FastAPI configurers (sessions, static files, error mapping) |
-| `jev_chess/main.py` | App factory: loads `.env`, boots the container with `pico_boot.init` |
-| `jev_chess/static/` | The UI: plain HTML, CSS and ES modules. `engine.js` hides the UCI protocol behind two questions (how good is this position, how good is every move), `analysis.js` holds the judgement and percentile math and draws the charts |
+| `system_one_chess/settings.py` | `@configured` dataclasses bound to environment variables |
+| `system_one_chess/provider.py` | `JevProvider` resolves the gateway for a request: the session's own choice and key if the browser set one, else the server's. It hides what differs between gateways: base URL, default model and where the cost is reported. `SessionCredentials` is the session-scoped holder of a key typed in the browser |
+| `system_one_chess/laya.py` | The local Laya model, loaded once per process on first use, off the event loop |
+| `system_one_chess/jev.py` | `JevApi`, the one place that talks HTTP to a gateway, and `JevMoveChooser`, which turns a position into a Choice question |
+| `system_one_chess/game.py` | `Game`, a session-scoped `@component` holding one board per browser session |
+| `system_one_chess/api.py` | `@controller` classes for the JSON API and the page, plus FastAPI configurers (sessions, static files, error mapping) |
+| `system_one_chess/main.py` | App factory: loads `.env`, boots the container with `pico_boot.init` |
+| `system_one_chess/static/` | The UI: plain HTML, CSS and ES modules. `engine.js` hides the UCI protocol behind two questions (how good is this position, how good is every move), `analysis.js` holds the judgement and percentile math and draws the charts |
 
-Rules, legality, game-over detection and PGN come from [python-chess](https://python-chess.readthedocs.io). The board is [chessground](https://github.com/lichess-org/chessground) and the engine is [Stockfish.js](https://github.com/nmrugg/stockfish.js) 19 (lite, single-threaded, so it needs no special HTTP headers). Both are vendored under `jev_chess/static/vendor/`, so the app works without any CDN.
+Rules, legality, game-over detection and PGN come from [python-chess](https://python-chess.readthedocs.io). The board is [chessground](https://github.com/lichess-org/chessground) and the engine is [Stockfish.js](https://github.com/nmrugg/stockfish.js) 19 (lite, single-threaded, so it needs no special HTTP headers). Both are vendored under `system_one_chess/static/vendor/`, so the app works without any CDN.
 
 ### API
 
@@ -248,8 +248,8 @@ gh auth token | docker login ghcr.io -u dperezcabrera --password-stdin
 Then build, tag and push:
 
 ```sh
-docker build -t ghcr.io/dperezcabrera/jev-chess:0.3.1 -t ghcr.io/dperezcabrera/jev-chess:latest .
-docker push --all-tags ghcr.io/dperezcabrera/jev-chess
+docker build -t ghcr.io/dperezcabrera/system-one-chess:0.3.1 -t ghcr.io/dperezcabrera/system-one-chess:latest .
+docker push --all-tags ghcr.io/dperezcabrera/system-one-chess
 ```
 
 A new package on the registry starts private. Make it public once, from the package settings on GitHub, so that `docker pull` works without logging in.

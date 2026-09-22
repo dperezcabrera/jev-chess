@@ -77,13 +77,13 @@ class Game:
         async with self._lock:
             game = chess.pgn.Game.from_board(self._board)
             jev = f"Jev ({self._chooser.model_for(self._credentials)})"
-            game.headers["Event"] = "jev-chess"
-            game.headers["Site"] = "https://github.com/dperezcabrera/jev-chess"
+            game.headers["Event"] = "system-one-chess"
+            game.headers["Site"] = "https://github.com/dperezcabrera/system-one-chess"
             game.headers["Date"] = datetime.now(UTC).strftime("%Y.%m.%d")
             game.headers["White"] = "Human" if self._human == "white" else jev
             game.headers["Black"] = "Human" if self._human == "black" else jev
             game.headers["Result"] = self._board.result(claim_draw=True)
-            return f"jev-chess-{self._id}.pgn", str(game) + "\n"
+            return f"system-one-chess-{self._id}.pgn", str(game) + "\n"
 
     def _snapshot(self) -> dict:
         board = self._board

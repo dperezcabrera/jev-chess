@@ -88,8 +88,8 @@ def test_a_model_that_favours_the_first_option_is_caught():
 def test_an_order_that_is_not_the_legal_moves_is_refused():
     import asyncio
 
-    from jev_chess.jev import JevMoveChooser
-    from jev_chess.provider import Gateway
+    from system_one_chess.jev import JevMoveChooser
+    from system_one_chess.provider import Gateway
 
     class Provider:
         def gateway(self, credentials=None):

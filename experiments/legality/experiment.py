@@ -15,8 +15,8 @@ import chess
 from pico_ioc import DictSource, EnvSource, configuration, init
 
 from experiments.option_order.experiment import POSITIONS_FILE
-from jev_chess.jev import JevError, JevMoveChooser
-from jev_chess.main import load_env
+from system_one_chess.jev import JevError, JevMoveChooser
+from system_one_chess.main import load_env
 
 DECOYS = 10
 SLIDERS = (chess.BISHOP, chess.ROOK, chess.QUEEN)
@@ -246,7 +246,7 @@ def main() -> None:
     )
     args = parser.parse_args()
     load_env()
-    modules = ["jev_chess.jev", "jev_chess.provider", "jev_chess.settings"]
+    modules = ["system_one_chess.jev", "system_one_chess.provider", "system_one_chess.settings"]
     container = init(modules=modules, config=configuration(EnvSource(), DictSource({})))
     positions = json.loads(POSITIONS_FILE.read_text())[: args.positions]
     report = asyncio.run(measure(container.get(JevMoveChooser), positions, args.draws, args.seed, args.workers))

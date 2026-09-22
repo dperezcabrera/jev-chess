@@ -112,7 +112,9 @@ class SessionConfigurer(FastApiConfigurer):
         self._secret = settings.secret
 
     def configure_app(self, app: FastAPI) -> None:
-        app.add_middleware(SessionMiddleware, secret_key=self._secret, session_cookie="jev_chess", same_site="strict")
+        app.add_middleware(
+            SessionMiddleware, secret_key=self._secret, session_cookie="system_one_chess", same_site="strict"
+        )
 
 
 @component

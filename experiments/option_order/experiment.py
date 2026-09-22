@@ -17,8 +17,8 @@ from statistics import mean
 import chess
 from pico_ioc import DictSource, EnvSource, configuration, init
 
-from jev_chess.jev import JevError, JevMoveChooser
-from jev_chess.main import load_env
+from system_one_chess.jev import JevError, JevMoveChooser
+from system_one_chess.main import load_env
 
 HERE = Path(__file__).parent
 POSITIONS_FILE = HERE.parent / "positions.json"
@@ -287,7 +287,7 @@ def main() -> None:
         (args.out / "report.json").write_text(json.dumps(report, indent=1))
         return
     load_env()
-    modules = ["jev_chess.jev", "jev_chess.provider", "jev_chess.settings"]
+    modules = ["system_one_chess.jev", "system_one_chess.provider", "system_one_chess.settings"]
     container = init(modules=modules, config=configuration(EnvSource(), DictSource({})))
     positions = json.loads(POSITIONS_FILE.read_text())[: args.positions]
     chooser = container.get(JevMoveChooser)

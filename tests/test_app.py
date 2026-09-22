@@ -7,9 +7,9 @@ import httpx
 import pytest
 from pico_ioc import DictSource, FlatDictSource, configuration
 
-from jev_chess.game import Game
-from jev_chess.jev import JevApi, describe
-from jev_chess.main import load_env
+from system_one_chess.game import Game
+from system_one_chess.jev import JevApi, describe
+from system_one_chess.main import load_env
 
 
 def jev_stub(pick):
@@ -31,7 +31,7 @@ def app(make_container, make_client):
     def build(handler, api_key="test-key"):
         flat = FlatDictSource({"OPENROUTER_API_KEY": api_key, "JEV_MODEL": "jev-test"})
         config = configuration(flat, DictSource({}))
-        container = make_container("jev_chess", "pico_fastapi", config=config)
+        container = make_container("system_one_chess", "pico_fastapi", config=config)
         build.container = container
         container.get(JevApi)._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         return make_client(container)
@@ -86,7 +86,7 @@ def test_game_exports_as_pgn(app):
     client.post("/api/move", json={"from": "e2", "to": "e4"})
     game_id = client.post("/api/jev").json()["game_id"]
     response = client.get("/api/pgn")
-    assert response.headers["content-disposition"] == f'attachment; filename="jev-chess-{game_id}.pgn"'
+    assert response.headers["content-disposition"] == f'attachment; filename="system-one-chess-{game_id}.pgn"'
     assert '[White "Human"]' in response.text and '[Black "Jev (jev-test)"]' in response.text
     assert '[Result "*"]' in response.text and "1. e4 e5 *" in response.text
 
@@ -152,9 +152,11 @@ def test_env_file_does_not_override_the_shell(tmp_path, monkeypatch):
 
 
 def provider_for(make_container, **env):
-    from jev_chess.provider import JevProvider
+    from system_one_chess.provider import JevProvider
 
-    container = make_container("jev_chess", "pico_fastapi", config=configuration(FlatDictSource(env), DictSource({})))
+    container = make_container(
+        "system_one_chess", "pico_fastapi", config=configuration(FlatDictSource(env), DictSource({}))
+    )
     return container.get(JevProvider).gateway()
 
 
@@ -182,7 +184,7 @@ def test_an_explicit_provider_and_model_win(make_container):
 
 
 def test_cost_is_read_from_either_gateway_shape():
-    from jev_chess.provider import JevProvider
+    from system_one_chess.provider import JevProvider
 
     assert JevProvider.cost_usd({"usage": {"input_tokens": 275, "cost": 0.00003}}) == 0.00003
     vercel = {"usage": {"input_tokens": 275}, "provider_metadata": {"gateway": {"cost": "0.00001155"}}}
@@ -209,7 +211,7 @@ def test_a_game_played_through_vercel_adds_up_its_cost(make_container, make_clie
         )
 
     config = configuration(FlatDictSource({"AI_GATEWAY_API_KEY": "vck"}), DictSource({}))
-    container = make_container("jev_chess", "pico_fastapi", config=config)
+    container = make_container("system_one_chess", "pico_fastapi", config=config)
     container.get(JevApi)._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     client = make_client(container)
     client.post("/api/move", json={"from": "e2", "to": "e4"})
@@ -218,7 +220,7 @@ def test_a_game_played_through_vercel_adds_up_its_cost(make_container, make_clie
 
 
 def test_an_unknown_provider_is_rejected_at_startup(make_container):
-    from jev_chess.provider import ProviderError
+    from system_one_chess.provider import ProviderError
 
     with pytest.raises(Exception) as error:
         provider_for(make_container, JEV_PROVIDER="azure")
@@ -241,7 +243,9 @@ def settings_app(make_container, make_client, seen, **env):
         san = next(iter(body["questions"]["move"]["criteria"]))
         return httpx.Response(200, json={"answers": {"move": {"choice": san, "probabilities": {san: 1.0}}}})
 
-    container = make_container("jev_chess", "pico_fastapi", config=configuration(FlatDictSource(env), DictSource({})))
+    container = make_container(
+        "system_one_chess", "pico_fastapi", config=configuration(FlatDictSource(env), DictSource({}))
+    )
     container.get(JevApi)._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     return container, make_client(container)
 
@@ -314,11 +318,13 @@ class FakeLaya:
 
 
 def laya_app(make_container, make_client, monkeypatch, installed=True, **env):
-    from jev_chess import laya as laya_module
-    from jev_chess.laya import LayaModel
+    from system_one_chess import laya as laya_module
+    from system_one_chess.laya import LayaModel
 
     monkeypatch.setattr(laya_module, "available", lambda: installed)
-    container = make_container("jev_chess", "pico_fastapi", config=configuration(FlatDictSource(env), DictSource({})))
+    container = make_container(
+        "system_one_chess", "pico_fastapi", config=configuration(FlatDictSource(env), DictSource({}))
+    )
     fake = FakeLaya()
     monkeypatch.setattr(container.get(LayaModel), "_load", lambda: fake)
     return make_client(container), fake

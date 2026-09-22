@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 globalThis.Worker = class {};
-const { judge, rankAgainstRandom, summarizeRanks } = await import('../jev_chess/static/analysis.js');
+const { judge, rankAgainstRandom, summarizeRanks } = await import('../system_one_chess/static/analysis.js');
 
 const spread = new Map([['a', 100], ['b', 50], ['c', 0], ['d', -50], ['e', -100]]);
 const ten = new Map(Array.from({ length: 10 }, (_, i) => [`m${i}`, -i * 10]));

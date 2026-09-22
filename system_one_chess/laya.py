@@ -10,7 +10,7 @@ from pico_ioc import component
 from .settings import LayaSettings
 
 NOT_INSTALLED = (
-    "Laya is not installed on this server. Install it with `pip install 'jev-chess[laya]'` "
+    "Laya is not installed on this server. Install it with `pip install 'system-one-chess[laya]'` "
     "(about 1.2 GB with PyTorch) or pick another provider in Settings."
 )
 
