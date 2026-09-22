@@ -44,7 +44,7 @@ If the key is already exported in your shell, pass it through without typing it:
 docker run --rm -p 127.0.0.1:8000:8000 -e AI_GATEWAY_API_KEY -e OPENROUTER_API_KEY ghcr.io/dperezcabrera/system-one-chess:latest
 ```
 
-Available tags: `latest` and the version number, such as `0.3.1`.
+Available tags: `latest` and the version number, such as `0.3.2`.
 
 To build the image yourself instead:
 
@@ -248,7 +248,7 @@ gh auth token | docker login ghcr.io -u dperezcabrera --password-stdin
 Then build, tag and push:
 
 ```sh
-docker build -t ghcr.io/dperezcabrera/system-one-chess:0.3.1 -t ghcr.io/dperezcabrera/system-one-chess:latest .
+docker build -t ghcr.io/dperezcabrera/system-one-chess:0.3.2 -t ghcr.io/dperezcabrera/system-one-chess:latest .
 docker push --all-tags ghcr.io/dperezcabrera/system-one-chess
 ```
 

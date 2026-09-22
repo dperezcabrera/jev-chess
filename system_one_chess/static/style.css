@@ -124,8 +124,8 @@ h2 { margin: 0 0 var(--space-2); font-size: 0.875rem; text-transform: uppercase;
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .decision { width: 100%; table-layout: fixed; border-collapse: collapse; }
-.decision th, .decision td { height: 32px; padding: 0 var(--space-2); border-bottom: 1px solid var(--border); }
-.decision th { font-size: 0.75rem; color: var(--text-muted); font-weight: 600; }
+.decision th, .decision td { height: 32px; padding: 0 var(--space-2); }
+.decision th { border-bottom: 1px solid var(--border); font-size: 0.75rem; color: var(--text-muted); font-weight: 600; }
 .col-move { text-align: left; }
 .col-prob { text-align: right; font-variant-numeric: tabular-nums; }
 .decision td.col-move { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -235,8 +235,8 @@ a.button { text-decoration: none; }
 .legend-blunder { background: var(--blunder); }
 
 .summary { width: 100%; table-layout: fixed; border-collapse: collapse; }
-.summary th, .summary td { height: 40px; padding: 0 var(--space-2); border-bottom: 1px solid var(--border); overflow: hidden; text-overflow: ellipsis; }
-.summary th { font-size: 0.75rem; color: var(--text-muted); font-weight: 600; }
+.summary th, .summary td { height: 40px; padding: 0 var(--space-2); overflow: hidden; text-overflow: ellipsis; }
+.summary th { border-bottom: 1px solid var(--border); font-size: 0.75rem; color: var(--text-muted); font-weight: 600; }
 .col-text { text-align: left; }
 .col-num { text-align: right; font-variant-numeric: tabular-nums; }
 
