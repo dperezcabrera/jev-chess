@@ -56,7 +56,10 @@
     },
     {
       "upstream": "moonshotai/kimi-k3",
-      "tier": "mid"
+      "tier": "mid",
+      "reasoning": {
+        "effort": "low"
+      }
     },
     {
       "upstream": "deepseek/deepseek-v4-pro-0813",
