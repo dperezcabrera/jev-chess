@@ -517,6 +517,21 @@ html:has(dialog[open]) { overflow: hidden; scrollbar-gutter: stable; }
 .col-badge { text-align: center; }
 .models-table .model-upstream { display: block; font-size: 0.75rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; }
 .models-table td.col-text { line-height: 1.2; }
+.model-logo { flex: none; box-sizing: border-box; width: 22px; height: 22px; padding: 2px; border-radius: 50%; object-fit: contain; background: #ffffff; border: 1px solid var(--border); vertical-align: middle; }
+.model-logo-fallback { display: inline-flex; align-items: center; justify-content: center; padding: 0; font-size: 0.6875rem; font-weight: 700; line-height: 1; color: #ffffff; background: var(--accent); border-color: var(--accent); }
+.model-head { display: inline-flex; align-items: center; gap: var(--space-2); max-width: 100%; min-width: 0; }
+.model-head-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-text { display: flex; flex-direction: column; min-width: 0; }
+.model-text strong, .model-text .model-upstream { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.segment-option .model-head-name { font-weight: 600; }
+.ranking-box { min-height: 96px; }
+.ranking { table-layout: auto; font-size: 0.875rem; }
+.ranking th, .ranking td { height: 36px; padding: 0 var(--space-1); white-space: nowrap; }
+.ranking .col-rank { text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.ranking .col-model { width: 100%; max-width: 0; text-align: left; overflow: hidden; }
+.ranking .col-model .model-head { max-width: 100%; }
+.ranking .col-num { text-align: right; font-variant-numeric: tabular-nums; }
+.ranking tbody tr:first-child td { font-weight: 600; }
 .kind-badge { display: inline-block; padding: 0 var(--space-2); border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
 .kind-system_one { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--text); }
 .kind-llm { background: color-mix(in srgb, var(--border) 60%, transparent); color: var(--text); }

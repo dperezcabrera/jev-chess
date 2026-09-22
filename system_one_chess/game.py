@@ -9,6 +9,7 @@ from pico_ioc import component
 from .jev import Forfeit, JevMoveChooser
 from .models import ModelRegistry, SessionModels
 from .provider import SessionCredentials
+from .standings import Standings
 
 COLORS = {"white": {chess.WHITE}, "black": {chess.BLACK}, "none": set()}
 
@@ -25,8 +26,10 @@ class Game:
         credentials: SessionCredentials,
         registry: ModelRegistry,
         session_models: SessionModels,
+        standings: Standings,
     ):
         self._chooser = chooser
+        self._standings = standings
         self._credentials = credentials
         self._registry = registry
         self._session_models = session_models
@@ -40,6 +43,7 @@ class Game:
         self._models = {chess.WHITE: white, chess.BLACK: black}
         self._forfeited: chess.Color | None = None
         self._illegal = {chess.WHITE: 0, chess.BLACK: 0}
+        self._cost = {chess.WHITE: 0.0, chess.BLACK: 0.0}
         self._jev_top: list[dict] = []
         self._usage = {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0, "seconds": 0.0, "illegal": 0}
 
@@ -71,6 +75,7 @@ class Game:
             if move not in board.legal_moves:
                 raise IllegalMove(f"illegal move: {origin}{target}")
             board.push(move)
+            self._finish()
             return self._snapshot()
 
     async def jev_move(self) -> dict:
@@ -85,11 +90,23 @@ class Game:
             except Forfeit as e:
                 self._count(e.usage)
                 self._forfeited = board.turn
+                self._finish()
                 return self._snapshot()
             self._jev_top = [{"san": san, "probability": p} for san, p in decision.top]
             self._count(decision)
             board.push(decision.move)
+            self._finish()
             return self._snapshot()
+
+    def _finish(self) -> None:
+        """Once a game is over it goes into the session ranking; a human seat counts as the player `human`."""
+        if not self._over():
+            return
+        players = {
+            color: "human" if color in COLORS[self._human] else self._models[color]
+            for color in (chess.WHITE, chess.BLACK)
+        }
+        self._standings.record(self._id, players, self._result() or "*", self._forfeited, self._illegal, self._cost)
 
     def _count(self, usage) -> None:
         self._usage["calls"] += 1
@@ -99,6 +116,7 @@ class Game:
         self._usage["seconds"] += usage.seconds
         self._usage["illegal"] += usage.illegal
         self._illegal[self._board.turn] += usage.illegal
+        self._cost[self._board.turn] += usage.cost_usd
 
     def _over(self) -> bool:
         return self._forfeited is not None or self._board.is_game_over(claim_draw=True)

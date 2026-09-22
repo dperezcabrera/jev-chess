@@ -88,6 +88,10 @@ function render(state) {
   syncAnalysis(state);
   $('game-id').textContent = state.game_id;
   renderDecision(state.jev_top);
+  if (state.over && standingsKey !== state.game_id) {
+    standingsKey = state.game_id;
+    loadStandings();
+  }
   renderMoves(state.history);
   if (state.over) setStatus(`Game over: ${state.result}`);
   else if (state.humans_turn) setStatus(`Your move (${state.turn})`);
@@ -415,6 +419,47 @@ let models = [];
 const chosen = { opponent: 'jev', white: 'jev', black: 'jev' };
 const modelName = (id) => (models.find((model) => model.id === id) || { name: id }).name;
 
+function logoNode(model) {
+  const fallback = Object.assign(document.createElement('span'), { className: 'model-logo model-logo-fallback', textContent: (model.name || '?').slice(0, 1).toUpperCase() });
+  fallback.setAttribute('aria-hidden', 'true');
+  if (!model.logo) return fallback;
+  const img = Object.assign(document.createElement('img'), { className: 'model-logo', src: model.logo, alt: '', width: 22, height: 22, loading: 'lazy' });
+  img.addEventListener('error', () => img.replaceWith(fallback));
+  return img;
+}
+
+let standingsKey = null;
+
+async function loadStandings() {
+  try {
+    renderStandings((await api('/api/standings')).rows);
+  } catch (error) {
+    $('standings-empty').textContent = error.message;
+  }
+}
+
+function renderStandings(rows) {
+  const body = $('standings');
+  body.replaceChildren();
+  $('standings-empty').hidden = rows.length > 0;
+  for (const row of rows) {
+    const tr = body.insertRow();
+    const rank = tr.insertCell();
+    rank.className = 'col-rank';
+    rank.textContent = row.rank;
+    const model = tr.insertCell();
+    model.className = 'col-model';
+    const head = Object.assign(document.createElement('span'), { className: 'model-head' });
+    head.append(logoNode(row), Object.assign(document.createElement('span'), { className: 'model-head-name', textContent: row.name, title: row.id }));
+    model.append(head);
+    for (const value of [row.games, row.wins, row.draws, row.losses, row.points % 1 ? row.points.toFixed(1) : row.points, `$${row.cost_usd.toFixed(4)}`]) {
+      const cell = tr.insertCell();
+      cell.className = 'col-num';
+      cell.textContent = value;
+    }
+  }
+}
+
 function renderSegments() {
   for (const box of sideForm.querySelectorAll('[data-segment]')) {
     const name = box.dataset.segment;
@@ -423,7 +468,8 @@ function renderSegments() {
       const label = document.createElement('label');
       label.className = `segment-option${model.ready ? '' : ' segment-unavailable'}`;
       const input = Object.assign(document.createElement('input'), { type: 'radio', name, value: model.id, checked: model.id === chosen[name], disabled: !model.ready });
-      const title = Object.assign(document.createElement('span'), { textContent: model.name });
+      const title = Object.assign(document.createElement('span'), { className: 'model-head' });
+      title.append(logoNode(model), Object.assign(document.createElement('span'), { className: 'model-head-name', textContent: model.name }));
       const note = Object.assign(document.createElement('small'), { textContent: model.ready ? (model.kind === 'llm' ? 'LLM' : model.provider === 'laya' ? 'local' : 'cloud') : model.note });
       label.append(input, title, note);
       return label;
@@ -497,7 +543,11 @@ function renderModels(data) {
     const row = body.insertRow();
     const name = row.insertCell();
     name.className = 'col-text';
-    name.append(Object.assign(document.createElement('strong'), { textContent: model.name }), Object.assign(document.createElement('span'), { className: 'model-upstream', textContent: model.upstream }));
+    const text = Object.assign(document.createElement('span'), { className: 'model-text' });
+    text.append(Object.assign(document.createElement('strong'), { textContent: model.name }), Object.assign(document.createElement('span'), { className: 'model-upstream', textContent: model.upstream }));
+    const head = Object.assign(document.createElement('span'), { className: 'model-head' });
+    head.append(logoNode(model), text);
+    name.append(head);
     const kind = row.insertCell();
     kind.className = 'col-badge';
     kind.append(Object.assign(document.createElement('span'), { className: `kind-badge kind-${model.kind}`, textContent: model.kind === 'llm' ? 'LLM' : 'System One' }));
@@ -547,5 +597,6 @@ $('models-form').addEventListener('submit', async (event) => {
 });
 
 renderDecision([]);
+loadStandings();
 const initial = await refresh();
 if (initial && initial.history.length === 0) openSideDialog({ cancellable: false });

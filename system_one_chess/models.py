@@ -7,27 +7,51 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from pico_ioc import component
+import httpx
+from pico_ioc import cleanup, component
 
 from . import laya as local_model
 from .provider import JevProvider, SessionCredentials
 from .settings import ModelsSettings
 
 LLM_LIMIT = 12
+LLM_PREFIX = "llm:"
 DEFAULT_MODELS_FILE = Path(__file__).with_name("models.json")
 
 
-def suggested_llms(path: Path) -> list[dict]:
-    """The LLM ids the Models dialog suggests, read on every call so the file can be edited without a restart."""
+def read_models_file(path: Path) -> dict:
+    """The models file, read on every call so it can be edited without a restart.
+
+    `suggested` lists the LLM ids the Models dialog offers; `logos` maps a built-in id (`jev`, `laya`) or an
+    OpenRouter vendor (`openai`, `x-ai`) to an image URL. A bare list is accepted as `suggested` alone."""
     try:
-        entries = json.loads(path.read_text())
+        data = json.loads(path.read_text())
     except (OSError, ValueError) as e:
-        raise ValueError(f"cannot read the suggested models from {path}: {e}") from e
+        raise ValueError(f"cannot read the models file {path}: {e}") from e
+    if isinstance(data, list):
+        data = {"suggested": data}
+    entries = data.get("suggested", []) if isinstance(data, dict) else None
+    logos = data.get("logos", {}) if isinstance(data, dict) else None
     if not isinstance(entries, list) or not all(
         isinstance(entry, dict) and "/" in str(entry.get("upstream", "")) for entry in entries
     ):
-        raise ValueError(f'{path} must hold a JSON list of {{"upstream": "vendor/model", "tier": "..."}} objects')
-    return [{"upstream": str(entry["upstream"]), "tier": str(entry.get("tier", ""))} for entry in entries]
+        raise ValueError(f'{path} must hold "suggested": a list of {{"upstream": "vendor/model", "tier": "..."}}')
+    if not isinstance(logos, dict) or not all(isinstance(url, str) for url in logos.values()):
+        raise ValueError(f'{path} must hold "logos": an object mapping a vendor or model id to an image URL')
+    return {
+        "suggested": [{"upstream": str(e["upstream"]), "tier": str(e.get("tier", ""))} for e in entries],
+        "logos": {str(key): url for key, url in logos.items()},
+    }
+
+
+def logo_key(model_id: str) -> str:
+    """What a model's logo is looked up by: the built-in id, or the vendor of an OpenRouter id."""
+    return model_id.removeprefix(LLM_PREFIX).split("/", 1)[0] if is_llm(model_id) else model_id
+
+
+def logo_path(model_id: str, logos: dict[str, str]) -> str:
+    key = logo_key(model_id)
+    return f"/api/logos/{key}" if key in logos else ""
 
 
 @dataclass(frozen=True)
@@ -39,6 +63,7 @@ class Model:
     upstream: str
     ready: bool
     note: str = ""
+    logo: str = ""
 
 
 @component(scope="session")
@@ -61,12 +86,16 @@ class SessionModels:
         self.llms = [entry for entry in self.llms if entry != upstream]
 
 
+def is_llm(kind: str) -> bool:
+    return kind.startswith(LLM_PREFIX)
+
+
 def llm_id(upstream: str) -> str:
     return f"llm:{upstream}"
 
 
 def llm_name(upstream: str) -> str:
-    return upstream.split("/", 1)[-1]
+    return upstream.removeprefix(LLM_PREFIX).split("/", 1)[-1]
 
 
 @component
@@ -76,14 +105,36 @@ class ModelRegistry:
         self._file = Path(settings.file) if settings.file else DEFAULT_MODELS_FILE
 
     def suggested(self) -> list[dict]:
-        return suggested_llms(self._file)
+        return read_models_file(self._file)["suggested"]
+
+    def logo_url(self, key: str) -> str:
+        """The configured image URL behind a logo key, empty when there is none."""
+        return read_models_file(self._file)["logos"].get(key, "")
+
+    def name_of(self, model_id: str) -> str:
+        if model_id == "human":
+            return "You"
+        return {"jev": "Jev", "laya": "Laya"}.get(model_id) or llm_name(model_id)
+
+    def logo_of(self, model_id: str) -> str:
+        return logo_path(model_id, read_models_file(self._file)["logos"]) if model_id != "human" else ""
 
     def list(self, credentials: SessionCredentials, session: SessionModels) -> list[Model]:
+        logos = read_models_file(self._file)["logos"]
         jev = self._provider.gateway(credentials, "jev")
         openrouter = self._provider.gateway_for("openrouter", credentials)
         installed = local_model.available()
         models = [
-            Model("jev", "Jev", "system_one", jev.name, jev.model, jev.ready, "" if jev.ready else "needs a key"),
+            Model(
+                "jev",
+                "Jev",
+                "system_one",
+                jev.name,
+                jev.model,
+                jev.ready,
+                "" if jev.ready else "needs a key",
+                logo_path("jev", logos),
+            ),
             Model(
                 "laya",
                 "Laya",
@@ -92,6 +143,7 @@ class ModelRegistry:
                 self._provider.gateway_for("laya").model,
                 installed,
                 "" if installed else "not installed",
+                logo_path("laya", logos),
             ),
         ]
         for upstream in session.llms:
@@ -105,6 +157,7 @@ class ModelRegistry:
                     upstream,
                     ready,
                     "" if ready else "needs an OpenRouter key",
+                    logo_path(llm_id(upstream), logos),
                 )
             )
         return models
@@ -114,3 +167,44 @@ class ModelRegistry:
             if model.id == model_id:
                 return model
         raise KeyError(model_id)
+
+
+LOGO_LIMIT = 2_000_000
+
+
+@component
+class LogoCache:
+    """Downloads each configured logo once per process and serves it from memory; a failed download is not cached."""
+
+    def __init__(self, registry: ModelRegistry):
+        self._registry = registry
+        self._cache: dict[str, tuple[bytes, str]] = {}
+        self._client = httpx.AsyncClient(follow_redirects=True, timeout=10.0)
+
+    async def get(self, key: str) -> tuple[bytes, str] | None:
+        if key in self._cache:
+            return self._cache[key]
+        url = self._registry.logo_url(key)
+        if not url:
+            return None
+        try:
+            response = await self._client.get(url)
+            response.raise_for_status()
+        except httpx.HTTPError:
+            return None
+        media_type = response.headers.get("content-type", "").split(";")[0].strip()
+        if not media_type.startswith("image/") or len(response.content) > LOGO_LIMIT:
+            return None
+        self._cache[key] = (response.content, media_type)
+        return self._cache[key]
+
+    @cleanup
+    def close(self) -> None:
+        import asyncio
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(self._client.aclose())
+        else:
+            loop.create_task(self._client.aclose())

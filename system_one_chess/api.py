@@ -13,9 +13,10 @@ from starlette.staticfiles import StaticFiles
 from . import laya as local_model
 from .game import Game, IllegalMove
 from .jev import JevError
-from .models import ModelRegistry, SessionModels
+from .models import LogoCache, ModelRegistry, SessionModels
 from .provider import LABELS, JevProvider, ProviderError, SessionCredentials
 from .settings import SessionSettings
+from .standings import Standings
 
 STATIC_DIR = Path(__file__).with_name("static")
 SQUARE = r"^[a-h][1-8]$"
@@ -110,6 +111,30 @@ class SettingsController:
     async def forget(self):
         self._credentials.clear()
         return self._view()
+
+
+@controller(prefix="/api/logos")
+class LogosController:
+    def __init__(self, logos: LogoCache):
+        self._logos = logos
+
+    @get("/{key}")
+    async def read(self, key: str):
+        found = await self._logos.get(key)
+        if found is None:
+            return JSONResponse({"error": "no logo"}, status_code=404, headers={"Cache-Control": "max-age=300"})
+        content, media_type = found
+        return Response(content, media_type=media_type, headers={"Cache-Control": "max-age=86400"})
+
+
+@controller(prefix="/api/standings")
+class StandingsController:
+    def __init__(self, standings: Standings):
+        self._standings = standings
+
+    @get("")
+    async def read(self):
+        return {"rows": self._standings.table()}
 
 
 @controller(prefix="/api/models")

@@ -10,6 +10,7 @@ from pico_ioc import DictSource, FlatDictSource, configuration
 from system_one_chess.game import Game
 from system_one_chess.jev import JevApi, describe
 from system_one_chess.main import load_env
+from system_one_chess.standings import Standings
 
 
 def jev_stub(pick):
@@ -112,7 +113,7 @@ def test_missing_api_key_is_explained(app):
 
 
 def test_promotion_piece_is_honoured():
-    game = Game(chooser=None, credentials=None, registry=None, session_models=None)
+    game = Game(chooser=None, credentials=None, registry=None, session_models=None, standings=Standings(registry=None))
     game._board = chess.Board("8/P6k/8/8/8/8/8/K7 w - - 0 1")
     state = asyncio.run(game.human_move("a7", "a8", "n"))
     assert state["fen"].startswith("N7/")
@@ -412,6 +413,7 @@ def llm_app(make_container, make_client, replies, seen, **env):
     config = configuration(FlatDictSource({"OPENROUTER_API_KEY": "server-key", **env}), DictSource({}))
     container = make_container("system_one_chess", "pico_fastapi", config=config)
     container.get(LLMApi)._client = httpx.AsyncClient(transport=httpx.MockTransport(llm_stub(replies, seen)))
+    llm_app.container = container
     return make_client(container)
 
 
@@ -432,6 +434,7 @@ def test_models_are_listed_and_llms_are_added_per_session(make_container, make_c
         "upstream": "openai/gpt-5-mini",
         "ready": True,
         "note": "",
+        "logo": "/api/logos/openai",
     }
     assert client.post("/api/models", json={"upstream": "not an id"}).status_code == 422
     assert client.delete("/api/models/openai/gpt-5-mini").json()["models"][-1]["id"] == "laya"
@@ -513,13 +516,73 @@ def test_an_llm_needs_an_openrouter_key(make_container, make_client):
 def test_the_suggested_models_come_from_a_file_that_is_read_on_every_request(make_container, make_client, tmp_path):
     from system_one_chess.models import DEFAULT_MODELS_FILE
 
-    assert any(entry["upstream"] == "x-ai/grok-4.7" for entry in json.loads(DEFAULT_MODELS_FILE.read_text()))
+    shipped = json.loads(DEFAULT_MODELS_FILE.read_text())
+    assert any(entry["upstream"] == "x-ai/grok-4.7" for entry in shipped["suggested"])
+    assert shipped["logos"]["x-ai"].startswith("https://")
     custom = tmp_path / "models.json"
     custom.write_text('[{"upstream": "acme/chess-1", "tier": "house"}]')
     client = llm_app(make_container, make_client, [], [], MODELS_FILE=str(custom))
-    assert client.get("/api/models").json()["suggested"] == [{"upstream": "acme/chess-1", "tier": "house"}]
-    custom.write_text('[{"upstream": "acme/chess-2"}]')
-    assert client.get("/api/models").json()["suggested"] == [{"upstream": "acme/chess-2", "tier": ""}]
+    listed = client.get("/api/models").json()
+    assert listed["suggested"] == [{"upstream": "acme/chess-1", "tier": "house"}], "a bare list still works"
+    assert listed["models"][0]["logo"] == "", "no logos configured, no logo path"
+    custom.write_text('{"suggested": [{"upstream": "acme/chess-2"}], "logos": {"jev": "https://logos.test/jev.png"}}')
+    listed = client.get("/api/models").json()
+    assert listed["suggested"] == [{"upstream": "acme/chess-2", "tier": ""}]
+    assert listed["models"][0]["logo"] == "/api/logos/jev" and listed["models"][1]["logo"] == ""
     custom.write_text("not json")
-    with pytest.raises(ValueError, match="cannot read the suggested models"):
+    with pytest.raises(ValueError, match="cannot read the models file"):
         client.get("/api/models")
+
+
+def test_logos_are_downloaded_once_and_a_missing_one_is_a_soft_404(make_container, make_client, tmp_path):
+    from system_one_chess.models import LogoCache
+
+    custom = tmp_path / "models.json"
+    custom.write_text(
+        '{"suggested": [], "logos": {"jev": "https://logos.test/jev.png", "openai": "https://logos.test/gone.png", '
+        '"laya": "https://logos.test/page.html"}}'
+    )
+    hits = []
+
+    def logos(request: httpx.Request) -> httpx.Response:
+        hits.append(str(request.url))
+        if request.url.path == "/jev.png":
+            return httpx.Response(200, content=b"PNGDATA", headers={"content-type": "image/png"})
+        if request.url.path == "/page.html":
+            return httpx.Response(200, content=b"<html>", headers={"content-type": "text/html"})
+        return httpx.Response(404)
+
+    client = llm_app(make_container, make_client, [], [], MODELS_FILE=str(custom))
+    llm_app.container.get(LogoCache)._client = httpx.AsyncClient(transport=httpx.MockTransport(logos))
+    first = client.get("/api/logos/jev")
+    assert first.status_code == 200 and first.content == b"PNGDATA" and first.headers["content-type"] == "image/png"
+    assert "max-age=86400" in first.headers["cache-control"]
+    assert client.get("/api/logos/jev").content == b"PNGDATA" and hits == ["https://logos.test/jev.png"]
+    assert client.get("/api/logos/openai").status_code == 404, "an upstream failure is a 404, never an error"
+    assert client.get("/api/logos/laya").status_code == 404, "a non-image is not served as a logo"
+    assert client.get("/api/logos/nobody").status_code == 404 and len(hits) == 3
+
+
+def test_finished_games_build_a_session_ranking(make_container, make_client):
+    seen = []
+    replies = ['{"choice": "e5"}', "nothing", "still nothing"]
+    client = llm_app(make_container, make_client, replies, seen)
+    client.post("/api/models", json={"upstream": "openai/gpt-5-mini"})
+    assert client.get("/api/standings").json() == {"rows": []}
+    client.post("/api/new", json={"human": "white", "black": "llm:openai/gpt-5-mini"})
+    client.post("/api/move", json={"from": "e2", "to": "e4"})
+    client.post("/api/jev")
+    client.post("/api/move", json={"from": "g1", "to": "f3"})
+    state = client.post("/api/jev").json()
+    assert state["over"] and state["result"] == "1-0 by illegal moves"
+    rows = client.get("/api/standings").json()["rows"]
+    assert [(row["rank"], row["id"], row["name"], row["points"]) for row in rows] == [
+        (1, "human", "You", 1.0),
+        (2, "llm:openai/gpt-5-mini", "gpt-5-mini", 0.0),
+    ]
+    llm = rows[1]
+    assert llm["games"] == 1 and llm["losses"] == 1 and llm["forfeits"] == 1 and llm["illegal"] == 2
+    assert llm["cost_usd"] == pytest.approx(0.0027) and llm["logo"] == "/api/logos/openai"
+    assert rows[0]["cost_usd"] == 0.0 and rows[0]["logo"] == ""
+    client.post("/api/new", json={"human": "white", "black": "llm:openai/gpt-5-mini"})
+    assert client.get("/api/standings").json()["rows"][0]["games"] == 1, "an unfinished game does not count"
