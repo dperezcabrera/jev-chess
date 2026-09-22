@@ -44,7 +44,7 @@
       "upstream": "deepseek/deepseek-v4.1-flash",
       "tier": "open weights",
       "reasoning": {
-        "effort": "low"
+        "enabled": false
       }
     },
     {
@@ -65,7 +65,7 @@
       "upstream": "deepseek/deepseek-v4-pro-0813",
       "tier": "open weights",
       "reasoning": {
-        "effort": "low"
+        "enabled": false
       }
     },
     {
