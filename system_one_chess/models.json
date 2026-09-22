@@ -1,6 +1,10 @@
 {
   "suggested": [
     {
+      "upstream": "openai/gpt-6-astra",
+      "tier": "frontier"
+    },
+    {
       "upstream": "anthropic/claude-fable-5.1",
       "tier": "frontier"
     },
@@ -46,6 +50,10 @@
       "reasoning": {
         "effort": "low"
       }
+    },
+    {
+      "upstream": "moonshotai/kimi-k3",
+      "tier": "mid"
     },
     {
       "upstream": "openai/gpt-5.6-luna",
