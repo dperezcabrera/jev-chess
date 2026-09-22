@@ -1,7 +1,7 @@
 """An LLM answering the same question as a System One model: pick one option from a labelled list.
 
 The chat completion is asked for a JSON object with the chosen label. A reply that names no option is an
-illegal move: the first earns one retry that quotes the mistake, the second forfeits the game."""
+illegal move; the caller says how many the model may still make, and one more than that forfeits."""
 
 import json
 import re
@@ -17,10 +17,10 @@ SYSTEM_PROMPT = (
     "You are playing a game. You will receive the game state, the exact list of legal labels as a JSON array, "
     "and a description of each one. Only those labels are legal moves. "
     'Reply with a JSON object only: {"choice": "<label>"}, copying one label verbatim. No other text. '
-    "A reply that is not one of the labels is an illegal move, and two illegal moves in one turn lose the game."
+    "A reply that is not one of the labels is an illegal move, and two illegal moves in a game lose it, as in chess."
 )
 RETRY_PROMPT = (
-    "{answer!r} is not one of the legal labels; that was an illegal move and a second one loses the game. "
+    "{answer!r} is not one of the legal labels; that was an illegal move and one more loses the game. "
     'Reply with a JSON object only, {{"choice": "<label>"}}, copying a label from the array exactly.'
 )
 MAX_TOKENS = 4000
@@ -33,7 +33,7 @@ class LLMAnswer:
     output_tokens: int
     cost_usd: float
     seconds: float
-    retried: bool
+    illegal: int
 
 
 class LLMError(Exception):
@@ -41,10 +41,13 @@ class LLMError(Exception):
 
 
 class IllegalAnswers(LLMError):
-    """Two replies in a row named no legal option; the game is forfeited and the attempts still cost."""
+    """The model used up its illegal answers without naming a legal option; the attempts still cost."""
 
-    def __init__(self, upstream: str, input_tokens: int, output_tokens: int, cost_usd: float, seconds: float):
-        super().__init__(f"{upstream} did not name a legal option after two attempts")
+    def __init__(
+        self, upstream: str, illegal: int, input_tokens: int, output_tokens: int, cost_usd: float, seconds: float
+    ):
+        super().__init__(f"{upstream} did not name a legal option after {illegal} illegal answers")
+        self.illegal = illegal
         self.input_tokens = input_tokens
         self.output_tokens = output_tokens
         self.cost_usd = cost_usd
@@ -88,8 +91,9 @@ class LLMApi:
         return response.json()
 
     async def choose(
-        self, gateway: Gateway, upstream: str, state: dict, instructions: str, criteria: dict
+        self, gateway: Gateway, upstream: str, state: dict, instructions: str, criteria: dict, attempts: int = 2
     ) -> LLMAnswer:
+        """`attempts` is how many replies the model gets; every one that names no label is an illegal answer."""
         labels = list(criteria)
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -97,7 +101,7 @@ class LLMApi:
         ]
         totals = {"input": 0, "output": 0, "cost": 0.0}
         started = time.perf_counter()
-        for attempt in range(2):
+        for attempt in range(max(1, attempts)):
             try:
                 response = await self.complete(gateway, upstream, messages)
                 text = response["choices"][0]["message"]["content"] or ""
@@ -117,13 +121,15 @@ class LLMApi:
                     totals["output"],
                     totals["cost"],
                     time.perf_counter() - started,
-                    attempt > 0,
+                    attempt,
                 )
             messages += [
                 {"role": "assistant", "content": text[:2000]},
                 {"role": "user", "content": RETRY_PROMPT.format(answer=text.strip()[:200])},
             ]
-        raise IllegalAnswers(upstream, totals["input"], totals["output"], totals["cost"], time.perf_counter() - started)
+        raise IllegalAnswers(
+            upstream, max(1, attempts), totals["input"], totals["output"], totals["cost"], time.perf_counter() - started
+        )
 
     @cleanup
     def close(self) -> None:

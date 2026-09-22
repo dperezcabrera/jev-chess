@@ -10,13 +10,15 @@ from .laya import LayaModel
 from .llm import IllegalAnswers, LLMApi, LLMError
 from .provider import NO_KEY, Gateway, JevProvider, SessionCredentials
 
+ILLEGAL_LIMIT = 2
+
 
 class JevError(Exception):
     pass
 
 
 class Forfeit(JevError):
-    """The side to move answered illegally twice and loses; `usage` is what those answers cost."""
+    """The side to move reached its second illegal answer of the game and loses; `usage` is what it cost."""
 
     def __init__(self, message: str, usage: "Answer"):
         super().__init__(message)
@@ -31,7 +33,7 @@ class Answer:
     output_tokens: int
     cost_usd: float
     seconds: float
-    retried: bool = False
+    illegal: int = 0
 
 
 @dataclass(frozen=True)
@@ -45,7 +47,7 @@ class Decision:
     output_tokens: int
     cost_usd: float
     seconds: float
-    retried: bool = False
+    illegal: int = 0
 
 
 @component
@@ -126,10 +128,13 @@ class JevMoveChooser:
         criteria: dict[str, str],
         credentials: SessionCredentials | None = None,
         model: str = "",
+        illegal_so_far: int = 0,
     ) -> Answer:
-        """One Choice question about a position: `criteria` maps each option label to its description."""
+        """One Choice question about a position: `criteria` maps each option label to its description.
+
+        `illegal_so_far` is how many illegal answers this side already gave in the game; an LLM forfeits at two."""
         if model.startswith("llm:"):
-            return await self._ask_llm(board, instructions, criteria, credentials, model[4:])
+            return await self._ask_llm(board, instructions, criteria, credentials, model[4:], illegal_so_far)
         gateway = self._provider.gateway(credentials, model)
         if not gateway.ready:
             raise JevError(NO_KEY)
@@ -159,14 +164,15 @@ class JevMoveChooser:
             seconds=time.perf_counter() - started,
         )
 
-    async def _ask_llm(self, board, instructions, criteria, credentials, upstream: str) -> Answer:
+    async def _ask_llm(self, board, instructions, criteria, credentials, upstream: str, illegal_so_far: int) -> Answer:
         gateway = self._provider.gateway_for("openrouter", credentials)
         if not gateway.api_key:
             raise JevError("An LLM needs an OpenRouter key. Add one in Settings (the gear icon).")
+        attempts = ILLEGAL_LIMIT - illegal_so_far
         try:
-            answer = await self._llm.choose(gateway, upstream, _state(board), instructions, criteria)
+            answer = await self._llm.choose(gateway, upstream, _state(board), instructions, criteria, attempts)
         except IllegalAnswers as e:
-            usage = Answer("", {}, e.input_tokens, e.output_tokens, e.cost_usd, e.seconds, retried=True)
+            usage = Answer("", {}, e.input_tokens, e.output_tokens, e.cost_usd, e.seconds, illegal=e.illegal)
             raise Forfeit(str(e), usage) from e
         except LLMError as e:
             raise JevError(str(e)) from e
@@ -177,7 +183,7 @@ class JevMoveChooser:
             output_tokens=answer.output_tokens,
             cost_usd=answer.cost_usd,
             seconds=answer.seconds,
-            retried=answer.retried,
+            illegal=answer.illegal,
         )
 
     async def choose(
@@ -186,6 +192,7 @@ class JevMoveChooser:
         credentials: SessionCredentials | None = None,
         order: list[chess.Move] | None = None,
         model: str = "",
+        illegal_so_far: int = 0,
     ) -> Decision:
         """Ask Jev for a move; `order` lists the legal moves in the order to offer them, to test whether it matters."""
         moves = list(board.legal_moves)
@@ -201,7 +208,12 @@ class JevMoveChooser:
             "Never leave a piece where it can be captured for free."
         )
         answer = await self.ask(
-            board, instructions, {san: describe(board, m) for san, m in options.items()}, credentials, model
+            board,
+            instructions,
+            {san: describe(board, m) for san, m in options.items()},
+            credentials,
+            model,
+            illegal_so_far,
         )
         return Decision(
             move=options[answer.choice],
@@ -213,5 +225,5 @@ class JevMoveChooser:
             output_tokens=answer.output_tokens,
             cost_usd=answer.cost_usd,
             seconds=answer.seconds,
-            retried=answer.retried,
+            illegal=answer.illegal,
         )

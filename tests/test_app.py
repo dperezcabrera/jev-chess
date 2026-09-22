@@ -467,7 +467,7 @@ def test_two_illegal_answers_in_one_turn_lose_the_game(make_container, make_clie
     state = client.post("/api/jev").json()
     assert state["over"] and state["result"] == "1-0 by illegal moves" and state["history"] == ["e4"]
     assert not state["humans_turn"] and not state["jevs_turn"]
-    assert state["usage"]["calls"] == 1 and state["usage"]["retries"] == 1
+    assert state["usage"]["calls"] == 1 and state["usage"]["illegal"] == 2 and state["illegal"]["black"] == 2
     assert state["usage"]["cost_usd"] == pytest.approx(0.0018), "both attempts are paid for"
     assert len(seen) == 2
     retry = seen[1]["messages"][-1]["content"]
@@ -475,6 +475,22 @@ def test_two_illegal_answers_in_one_turn_lose_the_game(make_container, make_clie
     assert client.post("/api/move", json={"from": "d2", "to": "d4"}).status_code == 409
     pgn = client.get("/api/pgn").text
     assert '[Result "1-0"]' in pgn and '[Termination "illegal moves"]' in pgn
+
+
+def test_illegal_answers_add_up_over_the_game_as_in_chess(make_container, make_client):
+    seen = []
+    replies = ["Kf9", '{"choice": "e5"}', "resign"]
+    client = llm_app(make_container, make_client, replies, seen)
+    client.post("/api/models", json={"upstream": "openai/gpt-5-mini"})
+    client.post("/api/new", json={"human": "white", "black": "llm:openai/gpt-5-mini"})
+    client.post("/api/move", json={"from": "e2", "to": "e4"})
+    state = client.post("/api/jev").json()
+    assert state["history"] == ["e4", "e5"] and state["illegal"] == {"white": 0, "black": 1} and not state["over"]
+    client.post("/api/move", json={"from": "g1", "to": "f3"})
+    state = client.post("/api/jev").json()
+    assert state["over"] and state["result"] == "1-0 by illegal moves" and state["illegal"]["black"] == 2
+    assert len(seen) == 3, "the second illegal answer of the game gets no retry"
+    assert state["usage"]["calls"] == 2 and state["usage"]["cost_usd"] == pytest.approx(0.0027)
 
 
 def test_an_llm_needs_an_openrouter_key(make_container, make_client):

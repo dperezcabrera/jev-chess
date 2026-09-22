@@ -39,8 +39,9 @@ class Game:
         self._human = human
         self._models = {chess.WHITE: white, chess.BLACK: black}
         self._forfeited: chess.Color | None = None
+        self._illegal = {chess.WHITE: 0, chess.BLACK: 0}
         self._jev_top: list[dict] = []
-        self._usage = {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0, "seconds": 0.0, "retries": 0}
+        self._usage = {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0, "seconds": 0.0, "illegal": 0}
 
     async def new(self, human: str, white: str = "jev", black: str = "jev") -> dict:
         if human not in COLORS:
@@ -78,7 +79,9 @@ class Game:
             if self._over() or board.turn in COLORS[self._human]:
                 raise IllegalMove("it is not Jev's turn")
             try:
-                decision = await self._chooser.choose(board, self._credentials, model=self._models[board.turn])
+                decision = await self._chooser.choose(
+                    board, self._credentials, model=self._models[board.turn], illegal_so_far=self._illegal[board.turn]
+                )
             except Forfeit as e:
                 self._count(e.usage)
                 self._forfeited = board.turn
@@ -94,7 +97,8 @@ class Game:
         self._usage["output_tokens"] += usage.output_tokens
         self._usage["cost_usd"] += usage.cost_usd
         self._usage["seconds"] += usage.seconds
-        self._usage["retries"] += int(usage.retried)
+        self._usage["illegal"] += usage.illegal
+        self._illegal[self._board.turn] += usage.illegal
 
     def _over(self) -> bool:
         return self._forfeited is not None or self._board.is_game_over(claim_draw=True)
@@ -148,6 +152,7 @@ class Game:
             "turn": "white" if board.turn else "black",
             "human": self._human,
             "models": {"white": self._models[chess.WHITE], "black": self._models[chess.BLACK]},
+            "illegal": {"white": self._illegal[chess.WHITE], "black": self._illegal[chess.BLACK]},
             "humans_turn": humans_turn,
             "jevs_turn": not over and not humans_turn,
             "dests": dests,
