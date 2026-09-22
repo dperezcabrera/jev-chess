@@ -6,6 +6,7 @@ import chess
 import httpx
 from pico_ioc import cleanup, component
 
+from .laya import LayaModel
 from .provider import NO_KEY, Gateway, JevProvider, SessionCredentials
 
 
@@ -86,9 +87,10 @@ def describe(board: chess.Board, move: chess.Move) -> str:
 
 @component
 class JevMoveChooser:
-    def __init__(self, api: JevApi, provider: JevProvider):
+    def __init__(self, api: JevApi, provider: JevProvider, laya: LayaModel):
         self._api = api
         self._provider = provider
+        self._laya = laya
 
     def model_for(self, credentials: SessionCredentials | None = None) -> str:
         return self._provider.gateway(credentials).model
@@ -102,8 +104,10 @@ class JevMoveChooser:
     ) -> Answer:
         """One Choice question about a position: `criteria` maps each option label to its description."""
         gateway = self._provider.gateway(credentials)
-        if not gateway.api_key:
+        if not gateway.ready:
             raise JevError(NO_KEY)
+        if gateway.local and len(criteria) > 8:
+            criteria = dict.fromkeys(criteria)
         state = {
             "game": "chess",
             "side_to_move": "white" if board.turn else "black",
@@ -115,13 +119,13 @@ class JevMoveChooser:
         started = time.perf_counter()
         try:
             body = {"model": gateway.model, "state": state, "questions": {"move": question}}
-            response = await self._api.system_one(gateway, body)
+            response = await (self._laya.system_one(body) if gateway.local else self._api.system_one(gateway, body))
             answer = response["answers"]["move"]
             choice = answer["choice"]
         except httpx.HTTPStatusError as e:
             raise JevError(f"HTTP {e.response.status_code}: {e.response.text[:300]}") from e
-        except (httpx.HTTPError, KeyError, TypeError, ValueError) as e:
-            raise JevError(f"request to Jev failed: {e}") from e
+        except (httpx.HTTPError, KeyError, TypeError, ValueError, RuntimeError) as e:
+            raise JevError(f"request to {gateway.name} failed: {e}") from e
         if choice not in criteria:
             raise JevError(f"Jev returned an unknown option: {choice!r}")
         usage = response.get("usage") or {}

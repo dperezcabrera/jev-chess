@@ -313,24 +313,39 @@ const KEY_LINKS = {
   openrouter: ['https://openrouter.ai/settings/keys', 'openrouter.ai/settings/keys'],
 };
 
+let settingsView = null;
+
 function renderSettings(settings) {
+  settingsView = settings;
   const select = $('settings-provider');
   select.replaceChildren(...settings.providers.map((provider) => new Option(provider.label, provider.id)));
   select.value = settings.provider;
   $('settings-key').value = '';
   $('settings-forget').hidden = settings.key_source !== 'session';
   $('settings-state').textContent = {
+    local: `Runs on this server, no key and no cost. Model: ${settings.model}.`,
     session: `Using your key ending in ${settings.key_hint}. Model: ${settings.model}.`,
     environment: `Using the server's key. Model: ${settings.model}.`,
     none: 'No key set yet. Jev cannot move until you add one.',
   }[settings.key_source];
-  syncKeyLink();
+  syncProviderFields();
 }
 
-function syncKeyLink() {
-  const [href, text] = KEY_LINKS[$('settings-provider').value] || KEY_LINKS.vercel;
-  $('settings-key-link').href = href;
-  $('settings-key-link').textContent = text;
+function syncProviderFields() {
+  const provider = $('settings-provider').value;
+  const local = provider === 'laya';
+  $('settings-key-field').hidden = local;
+  $('settings-key-note').hidden = local;
+  const hint = $('settings-provider-hint');
+  if (!local) {
+    const [href, text] = KEY_LINKS[provider] || KEY_LINKS.vercel;
+    hint.replaceChildren('Get a key at ', Object.assign(document.createElement('a'), { id: 'settings-key-link', href, target: '_blank', rel: 'noopener', textContent: text }), '.');
+    return;
+  }
+  const installed = settingsView && settingsView.laya_installed;
+  hint.textContent = installed
+    ? 'Laya is an open-source decision model (Apache-2.0) that runs on this server. The first move loads it, which takes a while.'
+    : "Laya is not installed on this server. Install it with pip install 'jev-chess[laya]' and restart.";
 }
 
 async function settingsRequest(method, body) {
@@ -359,7 +374,7 @@ $('open-settings').addEventListener('click', () => {
   settingsRequest('GET');
 });
 $('settings-close').addEventListener('click', () => $('settings-dialog').close());
-$('settings-provider').addEventListener('change', syncKeyLink);
+$('settings-provider').addEventListener('change', syncProviderFields);
 $('settings-forget').addEventListener('click', () => settingsRequest('DELETE'));
 $('settings-form').addEventListener('submit', async (event) => {
   event.preventDefault();

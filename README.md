@@ -44,7 +44,7 @@ If the key is already exported in your shell, pass it through without typing it:
 docker run --rm -p 127.0.0.1:8000:8000 -e AI_GATEWAY_API_KEY -e OPENROUTER_API_KEY ghcr.io/dperezcabrera/jev-chess:latest
 ```
 
-Available tags: `latest` and the version number, such as `0.2.0`.
+Available tags: `latest` and the version number, such as `0.3.0`.
 
 To build the image yourself instead:
 
@@ -56,6 +56,18 @@ docker run --rm -p 127.0.0.1:8000:8000 -e OPENROUTER_API_KEY jev-chess
 Or keep it in a `.env` file (see below) and use `--env-file .env`.
 
 The key is only read at run time. It is never baked into the image.
+
+## Laya, the open-source alternative
+
+[Laya](https://huggingface.co/convaiinnovations/laya) (Convai Innovations, Apache-2.0) answers the same typed questions as Jev and runs on your own machine, so it needs no key and costs nothing per move. It is an optional extra because it brings PyTorch along, about 1.2 GB on disk, and the model itself is another 2.4 GB downloaded from Hugging Face on first use:
+
+```sh
+.venv/bin/pip install -e ".[laya]"
+```
+
+Then pick Laya in the settings dialog behind the gear icon; with Laya installed and no key set it is the default. Loading the model takes a while the first time and needs about 2 to 3 GB of free memory; on a CPU each move takes a few hundred milliseconds, on a GPU tens. `LAYA_MODEL` and `LAYA_DEVICE` (`cpu`, `cuda`) override the defaults.
+
+One difference matters when comparing the two models. Laya has a budget of 192 tokens for all the options of a question, and a chess position with 30 legal moves described the way Jev gets them ("knight g8 to f6, gives check") needs about 400. So Laya receives the moves as bare labels in standard notation, `Nf6+`, which still carry captures, checks and mates, but not the "can be captured next turn" hint. Jev keeps the full descriptions. The measurements in this README are Jev's.
 
 ## Getting a key
 
@@ -113,6 +125,7 @@ Then run:
 | `AI_GATEWAY_API_KEY` | one of the two | Your Vercel AI Gateway key |
 | `OPENROUTER_API_KEY` | one of the two | Your OpenRouter key |
 | `JEV_PROVIDER` | the gateway whose key is set | `vercel` or `openrouter`, only needed when both keys are set |
+| `LAYA_MODEL`, `LAYA_DEVICE` | `convaiinnovations/laya`, auto | The local model and where it runs |
 | `JEV_MODEL` | `typesafe-ai/jev` on Vercel, `jev-latest` on OpenRouter | Model ID, for example `jev-1.13` on OpenRouter to pin a version |
 | `AI_GATEWAY_BASE_URL` | `https://ai-gateway.vercel.sh/typesafe` | Vercel's TypeSafe-compatible base URL |
 | `OPENROUTER_BASE_URL` | `https://openrouter.ai/api` | OpenRouter's System One base URL |
@@ -167,6 +180,7 @@ The backend is built with the [pico framework](https://github.com/dperezcabrera/
 |---|---|
 | `jev_chess/settings.py` | `@configured` dataclasses bound to environment variables |
 | `jev_chess/provider.py` | `JevProvider` resolves the gateway for a request: the session's own choice and key if the browser set one, else the server's. It hides what differs between gateways: base URL, default model and where the cost is reported. `SessionCredentials` is the session-scoped holder of a key typed in the browser |
+| `jev_chess/laya.py` | The local Laya model, loaded once per process on first use, off the event loop |
 | `jev_chess/jev.py` | `JevApi`, the one place that talks HTTP to a gateway, and `JevMoveChooser`, which turns a position into a Choice question |
 | `jev_chess/game.py` | `Game`, a session-scoped `@component` holding one board per browser session |
 | `jev_chess/api.py` | `@controller` classes for the JSON API and the page, plus FastAPI configurers (sessions, static files, error mapping) |
@@ -234,7 +248,7 @@ gh auth token | docker login ghcr.io -u dperezcabrera --password-stdin
 Then build, tag and push:
 
 ```sh
-docker build -t ghcr.io/dperezcabrera/jev-chess:0.2.0 -t ghcr.io/dperezcabrera/jev-chess:latest .
+docker build -t ghcr.io/dperezcabrera/jev-chess:0.3.0 -t ghcr.io/dperezcabrera/jev-chess:latest .
 docker push --all-tags ghcr.io/dperezcabrera/jev-chess
 ```
 

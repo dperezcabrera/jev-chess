@@ -222,7 +222,8 @@
     rules by <a href="https://python-chess.readthedocs.io" target="_blank" rel="noopener">python-chess</a>,
     decisions by <a href="https://typesafe.ai" target="_blank" rel="noopener">Jev</a>
     through <a href="https://vercel.com/ai-gateway/models/jev" target="_blank" rel="noopener">Vercel AI Gateway</a>
-    or <a href="https://openrouter.ai/typesafe" target="_blank" rel="noopener">OpenRouter</a>.
+    or <a href="https://openrouter.ai/typesafe" target="_blank" rel="noopener">OpenRouter</a>,
+    or by <a href="https://huggingface.co/convaiinnovations/laya" target="_blank" rel="noopener">Laya</a> on this server.
   </p>
 </main>
 <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
@@ -230,7 +231,7 @@
     <header class="pgn-header">
       <div>
         <h2 id="settings-title">Settings</h2>
-        <p>Choose who serves Jev and bring your own key.</p>
+        <p>Choose which model decides, and where it runs.</p>
       </div>
       <button id="settings-close" class="icon-button" type="button" aria-label="Close" title="Close">
         <svg viewBox="0 0 24 24" width="1.5em" height="1.5em" fill="currentColor" aria-hidden="true"><path d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7l-1.4-1.4L9.2 12 2.9 5.7l1.4-1.4 6.3 6.3 6.3-6.3z" transform="translate(1.4 0)"/></svg>
@@ -241,14 +242,14 @@
       <div class="field">
         <label for="settings-provider">Provider</label>
         <select id="settings-provider" name="provider"></select>
-        <p class="field-hint">Get a key at <a id="settings-key-link" href="https://vercel.com/ai-gateway" target="_blank" rel="noopener">vercel.com/ai-gateway</a>.</p>
+        <p id="settings-provider-hint" class="field-hint">Get a key at <a id="settings-key-link" href="https://vercel.com/ai-gateway" target="_blank" rel="noopener">vercel.com/ai-gateway</a>.</p>
       </div>
-      <div class="field">
+      <div id="settings-key-field" class="field">
         <label for="settings-key">API key</label>
         <input id="settings-key" name="api_key" type="password" autocomplete="off" spellcheck="false" maxlength="400">
-        <p id="settings-state" class="field-hint" role="status" aria-live="polite">Loading</p>
       </div>
-      <p class="field-hint">Your key is sent to this server, kept in memory for this browser session only, and never shown again. Leave the field empty to use the server's own key.</p>
+      <p id="settings-state" class="field-hint" role="status" aria-live="polite">Loading</p>
+      <p id="settings-key-note" class="field-hint">Your key is sent to this server, kept in memory for this browser session only, and never shown again. Leave the field empty to use the server's own key.</p>
       <p id="settings-error" class="settings-error" role="alert"></p>
     </div>
 

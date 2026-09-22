@@ -95,6 +95,6 @@ def test_an_order_that_is_not_the_legal_moves_is_refused():
         def gateway(self, credentials=None):
             return Gateway("openrouter", "https://x", "key", "jev-test", 5, False)
 
-    chooser = JevMoveChooser(api=None, provider=Provider())
+    chooser = JevMoveChooser(api=None, provider=Provider(), laya=None)
     with pytest.raises(ValueError):
         asyncio.run(chooser.choose(chess.Board(), order=[chess.Move.from_uci("e2e4")]))

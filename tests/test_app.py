@@ -296,3 +296,61 @@ def test_settings_reject_an_unknown_provider_and_an_oversized_key(make_container
     _, client = settings_app(make_container, make_client, [])
     assert client.post("/api/settings", json={"provider": "azure", "api_key": "x"}).status_code == 422
     assert client.post("/api/settings", json={"provider": "vercel", "api_key": "x" * 401}).status_code == 422
+
+
+class FakeLaya:
+    """Stands in for the loaded model: answers the first option and records what it was asked."""
+
+    def __init__(self):
+        self.asked = []
+
+    def system_one(self, state, questions):
+        self.asked.append((state, questions))
+        criteria = questions["move"]["criteria"]
+        first = next(iter(criteria))
+        probabilities = {key: 1 / len(criteria) for key in criteria}
+        answers = {"move": {"type": "choice", "choice": first, "probabilities": probabilities, "confidence": 0.5}}
+        return {"model": "laya-rl-agent", "answers": answers, "usage": {"input_tokens": 300, "output_tokens": 0}}
+
+
+def laya_app(make_container, make_client, monkeypatch, installed=True, **env):
+    from jev_chess import laya as laya_module
+    from jev_chess.laya import LayaModel
+
+    monkeypatch.setattr(laya_module, "available", lambda: installed)
+    container = make_container("jev_chess", "pico_fastapi", config=configuration(FlatDictSource(env), DictSource({})))
+    fake = FakeLaya()
+    monkeypatch.setattr(container.get(LayaModel), "_load", lambda: fake)
+    return make_client(container), fake
+
+
+def test_laya_is_the_default_when_installed_and_no_key_is_set(make_container, make_client, monkeypatch):
+    client, fake = laya_app(make_container, make_client, monkeypatch)
+    settings = client.get("/api/settings").json()
+    assert settings["provider"] == "laya" and settings["key_source"] == "local" and settings["laya_installed"]
+    assert {p["id"] for p in settings["providers"]} == {"vercel", "openrouter", "laya"}
+    client.post("/api/move", json={"from": "e2", "to": "e4"})
+    state = client.post("/api/jev").json()
+    assert len(state["history"]) == 2 and state["usage"]["calls"] == 1 and state["usage"]["cost_usd"] == 0
+    state_sent, questions = fake.asked[0]
+    assert state_sent["side_to_move"] == "black"
+    criteria = questions["move"]["criteria"]
+    assert len(criteria) == 20 and all(value is None for value in criteria.values()), "chess sends labels only"
+
+
+def test_a_session_can_pick_laya_over_a_server_key(make_container, make_client, monkeypatch):
+    client, fake = laya_app(make_container, make_client, monkeypatch, OPENROUTER_API_KEY="server-key")
+    assert client.get("/api/settings").json()["provider"] == "openrouter"
+    saved = client.post("/api/settings", json={"provider": "laya", "api_key": ""}).json()
+    assert saved["provider"] == "laya" and saved["key_source"] == "local"
+    client.post("/api/move", json={"from": "e2", "to": "e4"})
+    assert client.post("/api/jev").status_code == 200 and len(fake.asked) == 1
+
+
+def test_choosing_laya_when_it_is_not_installed_explains_how_to_install_it(make_container, make_client, monkeypatch):
+    client, _ = laya_app(make_container, make_client, monkeypatch, installed=False)
+    assert client.get("/api/settings").json()["laya_installed"] is False
+    client.post("/api/settings", json={"provider": "laya", "api_key": ""})
+    client.post("/api/move", json={"from": "e2", "to": "e4"})
+    response = client.post("/api/jev")
+    assert response.status_code == 502 and "pip install" in response.json()["error"]

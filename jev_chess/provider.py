@@ -2,10 +2,12 @@ from dataclasses import dataclass
 
 from pico_ioc import component
 
-from .settings import JevSettings, OpenRouterSettings, VercelSettings
+from . import laya as local_model
+from .settings import JevSettings, LayaSettings, OpenRouterSettings, VercelSettings
 
-LABELS = {"vercel": "Vercel AI Gateway", "openrouter": "OpenRouter"}
-DEFAULT_MODELS = {"openrouter": "jev-latest", "vercel": "typesafe-ai/jev"}
+LABELS = {"vercel": "Vercel AI Gateway", "openrouter": "OpenRouter", "laya": "Laya, local and open source"}
+DEFAULT_MODELS = {"openrouter": "jev-latest", "vercel": "typesafe-ai/jev", "laya": "convaiinnovations/laya"}
+LOCAL = "laya"
 NO_KEY = (
     "No API key. Open Settings (the gear icon) and add a Vercel AI Gateway or OpenRouter key, "
     "or set AI_GATEWAY_API_KEY or OPENROUTER_API_KEY on the server."
@@ -24,6 +26,14 @@ class Gateway:
     model: str
     timeout_seconds: float
     own_key: bool
+
+    @property
+    def local(self) -> bool:
+        return self.name == LOCAL
+
+    @property
+    def ready(self) -> bool:
+        return self.local or bool(self.api_key)
 
 
 @component(scope="session")
@@ -47,19 +57,25 @@ class SessionCredentials:
 class JevProvider:
     """Which gateway serves Jev: the session's choice, else JEV_PROVIDER, else the one whose key is set."""
 
-    def __init__(self, jev: JevSettings, openrouter: OpenRouterSettings, vercel: VercelSettings):
-        self._settings = {"openrouter": openrouter, "vercel": vercel}
+    def __init__(self, jev: JevSettings, openrouter: OpenRouterSettings, vercel: VercelSettings, laya: LayaSettings):
+        self._settings = {"openrouter": openrouter, "vercel": vercel, LOCAL: laya}
         self._model = jev.model
         name = jev.provider.strip().lower()
         if name and name not in self._settings:
             raise ProviderError(f"JEV_PROVIDER must be one of {sorted(self._settings)}, not {jev.provider!r}")
-        self._default = name or next((key for key, entry in self._settings.items() if entry.api_key), "openrouter")
+        self._default = name or next(
+            (key for key, entry in self._settings.items() if getattr(entry, "api_key", "")), None
+        )
+        if self._default is None:
+            self._default = LOCAL if local_model.available() else "openrouter"
 
     def gateway(self, credentials: SessionCredentials | None = None) -> Gateway:
         name = (credentials.provider if credentials else "") or self._default
         if name not in self._settings:
             raise ProviderError(f"unknown provider: {name!r}")
         entry = self._settings[name]
+        if name == LOCAL:
+            return Gateway(name, "", "", entry.model, 0.0, False)
         own_key = bool(credentials and credentials.api_key)
         return Gateway(
             name=name,

@@ -1,6 +1,6 @@
 [project]
 name = "jev-chess"
-version = "0.2.0"
+version = "0.3.0"
 description = "How good is Jev AI at chess? Play TypeSafe AI's System One model through OpenRouter and measure it with Stockfish"
 readme = "README.md"
 license = "GPL-3.0-or-later"
@@ -15,6 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pico-testing>=0.2.0", "pytest>=8", "ruff>=0.6"]
+laya = ["laya>=0.3.5"]
 
 [project.scripts]
 jev-chess = "jev_chess.main:main"

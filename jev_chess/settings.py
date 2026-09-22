@@ -20,6 +20,13 @@ class VercelSettings:
     timeout_seconds: float = 30.0
 
 
+@configured(prefix="LAYA_", mapping="flat")
+@dataclass
+class LayaSettings:
+    model: str = "convaiinnovations/laya"
+    device: str = ""
+
+
 @configured(prefix="JEV_", mapping="flat")
 @dataclass
 class JevSettings:

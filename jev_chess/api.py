@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.staticfiles import StaticFiles
 
+from . import laya as local_model
 from .game import Game, IllegalMove
 from .jev import JevError
 from .provider import LABELS, JevProvider, ProviderError, SessionCredentials
@@ -25,7 +26,7 @@ class MoveRequest(BaseModel):
 
 
 class SettingsRequest(BaseModel):
-    provider: Literal["vercel", "openrouter"]
+    provider: Literal["vercel", "openrouter", "laya"]
     api_key: str = Field(default="", max_length=400)
 
 
@@ -76,13 +77,16 @@ class SettingsController:
 
     def _view(self) -> dict:
         gateway = self._provider.gateway(self._credentials)
-        source = "session" if gateway.own_key else "environment" if gateway.api_key else "none"
+        source = (
+            "local" if gateway.local else "session" if gateway.own_key else "environment" if gateway.api_key else "none"
+        )
         return {
             "provider": gateway.name,
             "model": gateway.model,
             "key_source": source,
             "key_hint": gateway.api_key[-4:] if gateway.own_key else "",
             "providers": [{"id": name, "label": label} for name, label in LABELS.items()],
+            "laya_installed": local_model.available(),
         }
 
     @get("")

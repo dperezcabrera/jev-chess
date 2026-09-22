@@ -475,3 +475,5 @@ html:has(dialog[open]) { overflow: hidden; scrollbar-gutter: stable; }
   .side-card:hover { transform: none; }
   .spinner { animation: none; border-top-color: var(--border); }
 }
+
+.settings-body .field[hidden], .settings-body .field-hint[hidden] { display: none; }
