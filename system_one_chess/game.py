@@ -126,10 +126,14 @@ class Game:
             async with self._lock:
                 self._still(game_id, ply)
                 self._jev_top = [{"san": san, "probability": p} for san, p in decision.top]
-                self._count(decision)
-                self._moves.append(
-                    {**self._move_record(self._board, decision), "san": decision.san, "top": decision.top}
-                )
+                if decision.forced:
+                    record = {**self._move_record(self._board, decision), "san": decision.san, "forced": True}
+                    self._moves.append(record)
+                else:
+                    self._count(decision)
+                    self._moves.append(
+                        {**self._move_record(self._board, decision), "san": decision.san, "top": decision.top}
+                    )
                 self._board.push(decision.move)
                 self._turn_started = time.monotonic()
                 self._finish()

@@ -53,6 +53,7 @@ class Decision:
     illegal: int = 0
     illegal_answers: tuple[str, ...] = ()
     call: dict | None = None
+    forced: bool = False
 
 
 @component
@@ -255,6 +256,9 @@ class JevMoveChooser:
             if sorted(order, key=str) != sorted(moves, key=str):
                 raise ValueError("order must contain exactly the legal moves")
             moves = order
+        if len(moves) == 1:
+            san = board.san(moves[0])
+            return Decision(moves[0], san, [(san, 1.0)], {san: 1.0}, [san], 0, 0, 0.0, 0.0, forced=True)
         options = {board.san(m): m for m in moves}
         aliases = move_aliases(board, options)
         side = "white" if board.turn else "black"

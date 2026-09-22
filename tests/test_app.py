@@ -996,3 +996,19 @@ def test_laya_answers_through_the_demo_space_when_it_is_not_installed(make_conta
     assert state["history"] == ["d4"] and state["jev_top"][0]["san"] == "d4"
     assert [c[0] for c in calls] == ["POST", "GET"] and calls[0][1] == "/gradio_api/call/run_playground"
     assert state["usage"]["input_tokens"] == 200 and state["usage"]["cost_usd"] == 0.0
+
+
+def test_the_only_legal_move_is_played_without_asking_the_model():
+    import asyncio
+
+    import chess
+
+    from system_one_chess.jev import JevMoveChooser
+    from system_one_chess.settings import IllegalMovesSettings
+
+    chooser = JevMoveChooser(api=None, provider=None, laya=None, llm=None, illegal=IllegalMovesSettings())
+    board = chess.Board("7k/8/8/8/8/8/8/K6Q w - - 0 1")
+    board.push_san("Qh7+")
+    assert len(list(board.legal_moves)) == 1, "only the king move remains"
+    decision = asyncio.run(chooser.choose(board, model="llm:acme/never-called"))
+    assert decision.forced and decision.san == "Kxh7" and decision.cost_usd == 0.0 and decision.seconds == 0.0
