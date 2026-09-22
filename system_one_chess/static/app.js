@@ -76,8 +76,15 @@ function playerOf(state, colour) {
   return models.find((model) => model.id === id) || { id, name: id.replace(/^llm:[^/]*\//, ''), logo: '' };
 }
 
+let flipped = false;
+
+function orientationOf(state) {
+  const natural = state.human === 'black' ? 'black' : 'white';
+  return flipped ? (natural === 'white' ? 'black' : 'white') : natural;
+}
+
 function renderPlayers(state) {
-  const bottom = state.human === 'black' ? 'black' : 'white';
+  const bottom = orientationOf(state);
   const top = bottom === 'white' ? 'black' : 'white';
   for (const [slot, colour] of [['player-top', top], ['player-bottom', bottom]]) {
     const bar = $(slot);
@@ -95,7 +102,7 @@ function render(state) {
   renderPlayers(state);
   ground.set({
     fen: state.fen,
-    orientation: state.human === 'black' ? 'black' : 'white',
+    orientation: orientationOf(state),
     turnColor: state.turn,
     lastMove: state.last_move || undefined,
     check: state.check,
@@ -322,6 +329,14 @@ async function refresh() {
 }
 
 $('retry').addEventListener('click', refresh);
+$('flip-board').addEventListener('click', () => {
+  flipped = !flipped;
+  $('flip-board').setAttribute('aria-pressed', String(flipped));
+  if (current) {
+    ground.set({ orientation: orientationOf(current) });
+    renderPlayers(current);
+  }
+});
 
 $('export-pgn').addEventListener('click', async () => {
   const text = $('pgn-text');
