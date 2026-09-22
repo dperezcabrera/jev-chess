@@ -831,7 +831,7 @@ function miniNode(board, view) {
   };
   row(topColour, mini.top);
   row(orientation, mini.bottom);
-  const text = board.error ? 'stopped, click to retry' : board.over ? board.result : board.humans_turn ? 'your move' : `move ${Math.floor(board.ply / 2) + 1}, ${board[board.turn].name} thinking`;
+  const text = board.error ? 'stopped, click to retry' : board.over ? (board.forfeited ? `${board.result} by illegal moves, click to let it continue` : board.result) : board.humans_turn ? 'your move' : `move ${Math.floor(board.ply / 2) + 1}, ${board[board.turn].name} thinking`;
   if (mini.status.textContent !== text) mini.status.textContent = text;
   mini.status.className = `mini-status${board.error ? ' is-error' : board.humans_turn ? ' is-yours' : board.over ? ' is-over' : ''}`;
   mini.root.classList.toggle('selected', board.board === selectedBoard && !selectedRound);
@@ -867,6 +867,14 @@ async function selectBoard(number) {
   if (selectedBoard === number) {
     const board = tournament && tournament.rounds.length ? tournament.rounds[tournament.rounds.length - 1].pairings[number - 1] : null;
     if (board && board.error) await api(`/api/tournament/board/${number}/retry`, {});
+    else if (board && board.forfeited && tournament.active) {
+      try {
+        renderTournament(await api(`/api/tournament/board/${number}/pardon`, {}));
+        await refresh();
+      } catch (error) {
+        setStatus(error.message, { error: true });
+      }
+    }
     return;
   }
   selectedBoard = number;

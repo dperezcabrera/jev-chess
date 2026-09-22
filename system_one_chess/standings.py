@@ -75,6 +75,29 @@ class Standings:
             for key in ("calls", "input_tokens", "output_tokens", "seconds", "cost_usd"):
                 row[key] += usage[color][key]
 
+    def unrecord(
+        self,
+        game_id: str,
+        players: dict[chess.Color, str],
+        result: str,
+        forfeited: chess.Color | None,
+        illegal: dict[chess.Color, int],
+        usage: dict[chess.Color, dict],
+    ) -> None:
+        """Takes a recorded game out again, with the same arguments, so it can be played on."""
+        if game_id not in self._recorded or result not in POINTS:
+            return
+        self._recorded.discard(game_id)
+        for color, points in zip((chess.WHITE, chess.BLACK), POINTS[result]):
+            row = self._rows[players[color]]
+            row["games"] -= 1
+            row["points"] -= points
+            row["wins" if points == 1.0 else "draws" if points == 0.5 else "losses"] -= 1
+            row["forfeits"] -= int(forfeited == color)
+            row["illegal"] -= illegal[color]
+            for key in ("calls", "input_tokens", "output_tokens", "seconds", "cost_usd"):
+                row[key] -= usage[color][key]
+
     def table(self) -> list[dict]:
         rows = [
             {"id": model_id, "name": self._registry.name_of(model_id), "logo": self._registry.logo_of(model_id), **row}

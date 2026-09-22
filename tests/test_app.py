@@ -400,7 +400,9 @@ def llm_stub(replies, seen):
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
         seen.append({"url": str(request.url), "model": body["model"], "messages": body["messages"]})
-        text = replies.pop(0)
+        reply = replies.pop(0)
+        labels = json.loads(body["messages"][1]["content"].split("Legal labels:\n")[1].split("\n\n")[0])
+        text = reply(labels) if callable(reply) else reply
         usage = {"prompt_tokens": 900, "completion_tokens": 12, "cost": 0.0009}
         return httpx.Response(200, json={"choices": [{"message": {"content": text}}], "usage": usage})
 
@@ -702,6 +704,7 @@ def test_a_swiss_tournament_plays_its_boards_itself_and_waits_for_you(make_conta
     replied = until(lambda: (s := client.get("/api/tournament/board/1").json()) and s["humans_turn"] and s)
     assert len(replied["history"]) == len(moved["history"]) + 1, "the server answered your move with Jev's"
     assert client.get("/api/tournament/board/2").status_code == 409
+    assert client.post("/api/tournament/board/1/pardon").status_code == 409, "your board was not lost by illegal moves"
     pgn = client.get("/api/tournament/board/1/pgn")
     assert pgn.status_code == 200 and '[Event "system-one-chess"]' in pgn.text
     earlier = client.get("/api/tournament/board/1?round=1").json()
@@ -821,3 +824,28 @@ def test_a_tournament_is_saved_after_every_move_and_can_be_resumed_by_a_new_serv
     if board["human"] == "white" and "Nf3" not in [m for m in board["history"]]:
         pass
     assert fresh.delete("/api/tournament").json()["active"] is False
+
+
+def test_a_board_lost_by_illegal_moves_can_be_pardoned_while_its_round_is_on(make_container, make_client):
+    legal = [lambda labels: json.dumps({"choice": labels[0]})] * 400
+    client = llm_app(make_container, make_client, ["nothing", "still nothing", *legal], [])
+    client.post("/api/models", json={"upstream": "openai/gpt-5-mini"})
+    body = {"participants": ["llm:openai/gpt-5-mini", "jev"], "human": True, "rounds": 1}
+    client.post("/api/tournament", json=body)
+    view = until(lambda: (v := client.get("/api/tournament").json()) and v["rounds"][0]["pairings"][0]["result"] and v)
+    board = view["rounds"][0]["pairings"][0]
+    assert board["result"] == "0-1" and board["forfeited"] and view["done"]
+    before = {row["id"]: row for row in view["standings"]}
+    assert before["jev"]["points"] == 1.0 and before["llm:openai/gpt-5-mini"]["forfeits"] == 1
+
+    view = client.post("/api/tournament/board/1/pardon").json()
+    after = {row["id"]: row for row in view["standings"]}
+    assert view["active"] and not view["done"] and view["rounds"][0]["pairings"][0]["result"] is None
+    assert (
+        after["jev"]["points"] == 0.0 and after["jev"]["games"] == 0 and after["llm:openai/gpt-5-mini"]["forfeits"] == 0
+    )
+    state = until(lambda: (s := client.get("/api/tournament/board/1").json()) and len(s["history"]) >= 2 and s)
+    assert state["illegal"]["white"] == 0 and state["pardons"] == 1, (
+        "the game went on from the same position with a clean count"
+    )
+    assert client.post("/api/tournament/board/1/pardon").status_code == 409

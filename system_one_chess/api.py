@@ -173,6 +173,10 @@ class TournamentController:
         await self._tournament.retry(number)
         return await self._tournament.view()
 
+    @post("/board/{number}/pardon")
+    async def pardon(self, number: int):
+        return await self._tournament.pardon(number)
+
     @get("/board/{number}/pgn")
     async def board_pgn(self, number: int, round: int | None = None):
         filename, text = await self._tournament.board_pgn(number, round)

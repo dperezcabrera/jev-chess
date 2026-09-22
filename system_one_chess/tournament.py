@@ -276,6 +276,35 @@ class Tournament:
         entry["error"] = None
         entry["task"] = asyncio.create_task(self._run_board(entry))
 
+    async def pardon(self, number: int) -> dict:
+        """Lets a board of the current round that was lost by illegal moves go on, as if the forfeit had not
+        happened: its result leaves the standings and the game continues from the same position."""
+        entry = self._board(number)
+        outcome = await entry["game"].outcome()
+        if entry["result"] is None or outcome["forfeited"] is None:
+            raise IllegalMove(f"board {number} was not lost by illegal moves")
+        async with self._lock:
+            self._standings.unrecord(
+                outcome["game_id"],
+                outcome["players"],
+                outcome["result"],
+                outcome["forfeited"],
+                outcome["illegal"],
+                outcome["usage"],
+            )
+            for player in (entry["white"], entry["black"]):
+                if self._scores[player]:
+                    self._scores[player].pop()
+            entry["result"] = None
+            entry["pgn"] = ""
+            entry["record"] = None
+            entry["error"] = None
+            await entry["game"].pardon()
+            entry["game_id"] = (await entry["game"].snapshot())["game_id"]
+            self._save()
+        entry["task"] = asyncio.create_task(self._run_board(entry))
+        return await self.view()
+
     async def _new_round(self) -> None:
         order = self._participants if not self._rounds else [row["id"] for row in self._table()]
         pairs, bye = pair_round(order, self._played, self._balance, self._byes)
@@ -477,6 +506,7 @@ class Tournament:
                 "clock": {"white": usage["white"]["seconds"], "black": usage["black"]["seconds"]},
                 "thinking_seconds": state["thinking_seconds"],
                 "thinking_since": entry["thinking_since"],
+                "forfeited": entry["result"] is not None and (state["result"] or "").endswith("illegal moves"),
                 "error": entry["error"],
             }
 
