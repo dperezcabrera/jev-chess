@@ -98,7 +98,7 @@ class Tournament:
             outcome["result"],
             outcome["forfeited"],
             outcome["illegal"],
-            outcome["cost"],
+            outcome["usage"],
         )
         entry["result"] = outcome["result"]
         self._pairing += 1

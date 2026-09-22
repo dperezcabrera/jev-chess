@@ -35,6 +35,10 @@ class Standings:
             "byes": 0,
             "forfeits": 0,
             "illegal": 0,
+            "calls": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "seconds": 0.0,
             "cost_usd": 0.0,
         }
 
@@ -45,8 +49,9 @@ class Standings:
         result: str,
         forfeited: chess.Color | None,
         illegal: dict[chess.Color, int],
-        cost: dict[chess.Color, float],
+        usage: dict[chess.Color, dict],
     ) -> None:
+        """`usage` holds, per colour, the calls, tokens, seconds and cost that side spent on the game."""
         if game_id in self._recorded or result not in POINTS:
             return
         self._recorded.add(game_id)
@@ -57,7 +62,8 @@ class Standings:
             row["wins" if points == 1.0 else "draws" if points == 0.5 else "losses"] += 1
             row["forfeits"] += int(forfeited == color)
             row["illegal"] += illegal[color]
-            row["cost_usd"] += cost[color]
+            for key in ("calls", "input_tokens", "output_tokens", "seconds", "cost_usd"):
+                row[key] += usage[color][key]
 
     def table(self) -> list[dict]:
         rows = [

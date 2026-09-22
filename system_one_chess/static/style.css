@@ -531,7 +531,7 @@ html:has(dialog[open]) { overflow: hidden; scrollbar-gutter: stable; }
 .segment-option .model-head-name { font-weight: 600; }
 .ranking-box { min-height: 96px; }
 .ranking { table-layout: auto; font-size: 0.875rem; }
-.ranking th, .ranking td { height: 36px; padding: 0 var(--space-1); white-space: nowrap; }
+.ranking th, .ranking td { height: 36px; padding: 0 3px; white-space: nowrap; }
 .ranking .col-rank { text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .ranking .col-model { width: 100%; max-width: 0; text-align: left; overflow: hidden; }
 .ranking .col-model .model-head { max-width: 100%; }

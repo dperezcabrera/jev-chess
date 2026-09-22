@@ -43,7 +43,6 @@ class Game:
         self._models = {chess.WHITE: white, chess.BLACK: black}
         self._forfeited: chess.Color | None = None
         self._illegal = {chess.WHITE: 0, chess.BLACK: 0}
-        self._cost = {chess.WHITE: 0.0, chess.BLACK: 0.0}
         self._jev_top: list[dict] = []
         self._usage = self._empty_usage()
         self._usage_by_colour = {chess.WHITE: self._empty_usage(), chess.BLACK: self._empty_usage()}
@@ -111,7 +110,7 @@ class Game:
         if not self._over():
             return
         self._standings.record(
-            self._id, self._players(), self._result() or "*", self._forfeited, self._illegal, self._cost
+            self._id, self._players(), self._result() or "*", self._forfeited, self._illegal, self._usage_by_colour
         )
 
     async def outcome(self) -> dict:
@@ -124,7 +123,7 @@ class Game:
                 "result": self._result() or "*",
                 "forfeited": self._forfeited,
                 "illegal": dict(self._illegal),
-                "cost": dict(self._cost),
+                "usage": {color: dict(totals) for color, totals in self._usage_by_colour.items()},
             }
 
     @staticmethod
@@ -140,7 +139,6 @@ class Game:
             totals["seconds"] += usage.seconds
             totals["illegal"] += usage.illegal
         self._illegal[self._board.turn] += usage.illegal
-        self._cost[self._board.turn] += usage.cost_usd
 
     def _over(self) -> bool:
         return self._forfeited is not None or self._board.is_game_over(claim_draw=True)

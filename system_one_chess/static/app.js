@@ -500,6 +500,10 @@ async function loadStandings() {
   }
 }
 
+const compactTokens = (n) => (n < 1000 ? String(n) : n < 10000 ? `${(n / 1000).toFixed(1)}k` : n < 1000000 ? `${Math.round(n / 1000)}k` : `${(n / 1000000).toFixed(1)}M`);
+const compactTime = (seconds) => (seconds < 60 ? `${Math.round(seconds)}s` : seconds < 3600 ? `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s` : `${Math.floor(seconds / 3600)}h ${Math.round((seconds % 3600) / 60)}m`);
+const spendCells = (row, withTime = true) => [compactTokens(row.input_tokens + row.output_tokens), ...(withTime ? [compactTime(row.seconds)] : []), `$${row.cost_usd.toFixed(4)}`];
+
 function renderStandings(rows) {
   const body = $('standings');
   body.replaceChildren();
@@ -514,7 +518,7 @@ function renderStandings(rows) {
     const head = Object.assign(document.createElement('span'), { className: 'model-head' });
     head.append(logoNode(row), Object.assign(document.createElement('span'), { className: 'model-head-name', textContent: row.name, title: row.id }));
     model.append(head);
-    for (const value of [row.games, row.wins, row.draws, row.losses, row.points % 1 ? row.points.toFixed(1) : row.points, `$${row.cost_usd.toFixed(4)}`]) {
+    for (const value of [row.games, row.wins, row.draws, row.losses, row.points % 1 ? row.points.toFixed(1) : row.points, ...spendCells(row, false)]) {
       const cell = tr.insertCell();
       cell.className = 'col-num';
       cell.textContent = value;
@@ -551,7 +555,7 @@ function renderTournament(view) {
     const cell = tr.insertCell();
     cell.className = 'col-model';
     cell.append(playerNode(row));
-    for (const value of [row.games, row.points % 1 ? row.points.toFixed(1) : row.points, row.buchholz % 1 ? row.buchholz.toFixed(1) : row.buchholz, `$${row.cost_usd.toFixed(4)}`]) {
+    for (const value of [row.games, row.points % 1 ? row.points.toFixed(1) : row.points, row.buchholz % 1 ? row.buchholz.toFixed(1) : row.buchholz, ...spendCells(row)]) {
       Object.assign(tr.insertCell(), { className: 'col-num', textContent: value });
     }
   }

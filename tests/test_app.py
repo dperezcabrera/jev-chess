@@ -599,6 +599,7 @@ def test_finished_games_build_a_session_ranking(make_container, make_client):
     llm = rows[1]
     assert llm["games"] == 1 and llm["losses"] == 1 and llm["forfeits"] == 1 and llm["illegal"] == 2
     assert llm["cost_usd"] == pytest.approx(0.0027) and llm["logo"] == "/api/logos/openai"
+    assert llm["calls"] == 2 and llm["input_tokens"] == 2700 and llm["output_tokens"] == 36 and llm["seconds"] > 0
     assert rows[0]["cost_usd"] == 0.0 and rows[0]["logo"] == ""
     client.post("/api/new", json={"human": "white", "black": "llm:openai/gpt-5-mini"})
     assert client.get("/api/standings").json()["rows"][0]["games"] == 1, "an unfinished game does not count"
