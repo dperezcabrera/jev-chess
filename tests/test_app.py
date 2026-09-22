@@ -1141,3 +1141,46 @@ def test_kev_answers_through_its_demo_space_or_a_local_server(make_container, ma
     client.post("/api/new", json={"human": "black", "white": "kev"})
     state = client.post("/api/jev").json()
     assert len(state["history"]) == 1 and seen == [("/v1/systemone", "Bearer k", "kev-latest")]
+
+
+def test_you_can_take_your_last_move_back_with_the_reply_it_got(make_container, make_client):
+    client = llm_app(make_container, make_client, [], [])
+    assert client.post("/api/takeback").status_code == 409, "nothing to take back yet"
+    client.post("/api/new", json={"human": "white", "black": "jev"})
+    client.post("/api/move", json={"from": "e2", "to": "e4"})
+    state = client.post("/api/jev").json()
+    assert len(state["history"]) == 2 and state["humans_turn"]
+    state = client.post("/api/takeback").json()
+    assert state["history"] == [] and state["humans_turn"] and state["takebacks"] == 1
+    assert state["usage"]["calls"] == 1, "the reply that was taken back still cost a call"
+    client.post("/api/move", json={"from": "d2", "to": "d4"})
+    state = client.post("/api/jev").json()
+    assert state["history"][0] == "d4"
+    client.post("/api/new", json={"human": "none", "white": "jev", "black": "jev"})
+    assert client.post("/api/takeback").status_code == 409, "only in a game you play"
+
+    client.post("/api/tournament", json={"participants": ["jev"], "human": True, "rounds": 1, "time_limit": 0})
+    state = until(lambda: (s := client.get("/api/tournament/board/1").json()) and s["humans_turn"] and s)
+    origin, target = ("e2", "e4") if state["human"] == "white" else ("e7", "e5")
+    client.post("/api/tournament/board/1/move", json={"from": origin, "to": target})
+    state = until(
+        lambda: (
+            (s := client.get("/api/tournament/board/1").json()) and s["humans_turn"] and len(s["history"]) >= 2 and s
+        )
+    )
+    before = len(state["history"])
+    state = client.post("/api/tournament/board/1/takeback").json()
+    assert len(state["history"]) == before - 2 and state["humans_turn"] and state["takebacks"] == 1
+    client.post("/api/tournament/board/1/move", json={"from": origin, "to": target})
+    state = until(
+        lambda: (
+            (s := client.get("/api/tournament/board/1").json()) and s["humans_turn"] and len(s["history"]) >= 2 and s
+        )
+    )
+    mine = 0 if state["human"] == "white" else 1
+    assert client.post("/api/tournament/board/1/takeback", json={"ply": 1 - mine}).status_code == 409, (
+        "not the model's turn"
+    )
+    state = client.post("/api/tournament/board/1/takeback", json={"ply": mine}).json()
+    assert len(state["history"]) == mine and state["humans_turn"] and state["takebacks"] == 2
+    assert client.delete("/api/tournament").json()["active"] is False
