@@ -9,8 +9,7 @@ from pico_ioc import cleanup, component
 from .laya import LayaModel
 from .llm import IllegalAnswers, LLMApi, LLMError
 from .provider import NO_KEY, Gateway, JevProvider, SessionCredentials
-
-ILLEGAL_LIMIT = 2
+from .settings import IllegalMovesSettings
 
 
 class JevError(Exception):
@@ -98,6 +97,24 @@ def describe(board: chess.Board, move: chess.Move) -> str:
     return text
 
 
+def move_aliases(board: chess.Board, options: dict[str, chess.Move]) -> dict[str, str]:
+    """Other ways an LLM writes a legal move: UCI, no check or mate sign, castling with zeros, `x` left out."""
+    aliases: dict[str, str] = {}
+    for san, move in options.items():
+        for alias in (
+            move.uci(),
+            san.rstrip("+#"),
+            san.replace("O", "0"),
+            san.rstrip("+#").replace("O", "0"),
+            san.replace("x", ""),
+            san.rstrip("+#").replace("x", ""),
+            f"{chess.square_name(move.from_square)}-{chess.square_name(move.to_square)}",
+        ):
+            if alias != san and alias not in options:
+                aliases.setdefault(alias, san)
+    return aliases
+
+
 def _state(board: chess.Board) -> dict:
     return {
         "game": "chess",
@@ -110,11 +127,12 @@ def _state(board: chess.Board) -> dict:
 
 @component
 class JevMoveChooser:
-    def __init__(self, api: JevApi, provider: JevProvider, laya: LayaModel, llm: LLMApi):
+    def __init__(self, api: JevApi, provider: JevProvider, laya: LayaModel, llm: LLMApi, illegal: IllegalMovesSettings):
         self._api = api
         self._provider = provider
         self._laya = laya
         self._llm = llm
+        self._illegal_limit = max(1, illegal.limit)
 
     def model_for(self, credentials: SessionCredentials | None = None, model: str = "") -> str:
         if model.startswith("llm:"):
@@ -129,12 +147,14 @@ class JevMoveChooser:
         credentials: SessionCredentials | None = None,
         model: str = "",
         illegal_so_far: int = 0,
+        aliases: dict[str, str] | None = None,
     ) -> Answer:
         """One Choice question about a position: `criteria` maps each option label to its description.
 
-        `illegal_so_far` is how many illegal answers this side already gave in the game; an LLM forfeits at two."""
+        `illegal_so_far` is how many illegal answers this side already gave in the game; `aliases` are other
+        spellings of the labels an LLM may use, which do not count as illegal."""
         if model.startswith("llm:"):
-            return await self._ask_llm(board, instructions, criteria, credentials, model[4:], illegal_so_far)
+            return await self._ask_llm(board, instructions, criteria, credentials, model[4:], illegal_so_far, aliases)
         gateway = self._provider.gateway(credentials, model)
         if not gateway.ready:
             raise JevError(NO_KEY)
@@ -164,13 +184,15 @@ class JevMoveChooser:
             seconds=time.perf_counter() - started,
         )
 
-    async def _ask_llm(self, board, instructions, criteria, credentials, upstream: str, illegal_so_far: int) -> Answer:
+    async def _ask_llm(
+        self, board, instructions, criteria, credentials, upstream, illegal_so_far, aliases=None
+    ) -> Answer:
         gateway = self._provider.gateway_for("openrouter", credentials)
         if not gateway.api_key:
             raise JevError("An LLM needs an OpenRouter key. Add one in Settings (the gear icon).")
-        attempts = ILLEGAL_LIMIT - illegal_so_far
+        attempts = self._illegal_limit - illegal_so_far
         try:
-            answer = await self._llm.choose(gateway, upstream, _state(board), instructions, criteria, attempts)
+            answer = await self._llm.choose(gateway, upstream, _state(board), instructions, criteria, attempts, aliases)
         except IllegalAnswers as e:
             usage = Answer("", {}, e.input_tokens, e.output_tokens, e.cost_usd, e.seconds, illegal=e.illegal)
             raise Forfeit(str(e), usage) from e
@@ -201,6 +223,7 @@ class JevMoveChooser:
                 raise ValueError("order must contain exactly the legal moves")
             moves = order
         options = {board.san(m): m for m in moves}
+        aliases = move_aliases(board, options)
         side = "white" if board.turn else "black"
         instructions = (
             f"You are a strong chess player playing {side}. Which move is best? "
@@ -214,6 +237,7 @@ class JevMoveChooser:
             credentials,
             model,
             illegal_so_far,
+            aliases,
         )
         return Decision(
             move=options[answer.choice],

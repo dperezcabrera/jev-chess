@@ -34,6 +34,12 @@ class JevSettings:
     model: str = ""
 
 
+@configured(prefix="ILLEGAL_MOVES_", mapping="flat")
+@dataclass
+class IllegalMovesSettings:
+    limit: int = 2
+
+
 @configured(prefix="MODELS_", mapping="flat")
 @dataclass
 class ModelsSettings:

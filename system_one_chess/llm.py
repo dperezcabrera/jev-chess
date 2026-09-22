@@ -21,9 +21,10 @@ SYSTEM_PROMPT = (
 )
 RETRY_PROMPT = (
     "{answer!r} is not one of the legal labels; that was an illegal move and one more loses the game. "
-    'Reply with a JSON object only, {{"choice": "<label>"}}, copying a label from the array exactly.'
+    'Reply with a JSON object only, {{"choice": "<label>"}}, copying one label exactly from this array: {labels}'
 )
 MAX_TOKENS = 4000
+TRIM = ".,;:!?*'\"`"
 
 
 @dataclass(frozen=True)
@@ -54,18 +55,53 @@ class IllegalAnswers(LLMError):
         self.seconds = seconds
 
 
-def parse_choice(text: str, labels: list[str]) -> str | None:
-    """The label in a reply, by JSON first and by exact text second; None when nothing matches."""
+def parse_choice(text: str, labels: list[str], aliases: dict[str, str] | None = None) -> str | None:
+    """The label in a reply: the JSON `choice` first, then a single label mentioned in the text.
+
+    `aliases` maps other spellings of a label to it (the caller knows its notation: `e2e4` for `e4`, `Nf3`
+    for `Nf3+`); matching ignores case and trailing punctuation, so only a genuinely different answer fails."""
+    known = {label.lower(): label for label in labels}
+    known.update({alias.lower(): label for alias, label in (aliases or {}).items() if label in labels})
     candidate = None
     try:
         candidate = json.loads(text).get("choice")
     except (ValueError, AttributeError):
         match = re.search(r'"choice"\s*:\s*"([^"]+)"', text)
         candidate = match.group(1) if match else None
-    if isinstance(candidate, str) and candidate.strip() in labels:
-        return candidate.strip()
-    exact = [label for label in labels if re.search(rf"(?<![\w-]){re.escape(label)}(?![\w-])", text)]
-    return exact[0] if len(exact) == 1 else None
+    if isinstance(candidate, str):
+        cleaned = candidate.strip().strip(TRIM).lower()
+        if cleaned in known:
+            return known[cleaned]
+    found = {
+        known[token.lower()]
+        for token in re.findall(r"[^\s\"',;()]+", text)
+        if token.strip(TRIM).lower() in known
+        for token in [token.strip(TRIM)]
+    }
+    return found.pop() if len(found) == 1 else None
+
+
+def choice_schema(labels: list[str]) -> dict:
+    """Structured output that only admits one of the labels, for the models that honour a JSON schema."""
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "choice",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {"choice": {"type": "string", "enum": labels}},
+                "required": ["choice"],
+                "additionalProperties": False,
+            },
+        },
+    }
+
+
+def reply_text(response: dict) -> str:
+    """The reply, falling back to the reasoning when a thinking model spent its tokens there."""
+    message = response["choices"][0]["message"]
+    return (message.get("content") or message.get("reasoning") or message.get("reasoning_content") or "")[:20000]
 
 
 def render(state: dict, instructions: str, criteria: dict[str, str | None]) -> str:
@@ -78,20 +114,39 @@ def render(state: dict, instructions: str, criteria: dict[str, str | None]) -> s
 class LLMApi:
     def __init__(self):
         self._client = httpx.AsyncClient()
+        self._no_schema: set[str] = set()
 
-    async def complete(self, gateway: Gateway, upstream: str, messages: list[dict]) -> dict:
+    async def complete(self, gateway: Gateway, upstream: str, messages: list[dict], labels: list[str]) -> dict:
+        """One chat completion, with a JSON schema that only admits the labels; a model that rejects the
+        schema (HTTP 400) is asked again without it and remembered."""
         body = {"model": upstream, "messages": messages, "max_tokens": MAX_TOKENS, "temperature": 0}
-        response = await self._client.post(
+        if upstream not in self._no_schema:
+            body["response_format"] = choice_schema(labels)
+        response = await self._post(gateway, body)
+        if response.status_code == 400 and "response_format" in body:
+            self._no_schema.add(upstream)
+            del body["response_format"]
+            response = await self._post(gateway, body)
+        response.raise_for_status()
+        return response.json()
+
+    async def _post(self, gateway: Gateway, body: dict) -> httpx.Response:
+        return await self._client.post(
             f"{gateway.base_url}/v1/chat/completions",
             json=body,
             headers={"Authorization": f"Bearer {gateway.api_key}", "X-Title": "system-one-chess"},
             timeout=max(gateway.timeout_seconds, 120),
         )
-        response.raise_for_status()
-        return response.json()
 
     async def choose(
-        self, gateway: Gateway, upstream: str, state: dict, instructions: str, criteria: dict, attempts: int = 2
+        self,
+        gateway: Gateway,
+        upstream: str,
+        state: dict,
+        instructions: str,
+        criteria: dict,
+        attempts: int = 2,
+        aliases: dict[str, str] | None = None,
     ) -> LLMAnswer:
         """`attempts` is how many replies the model gets; every one that names no label is an illegal answer."""
         labels = list(criteria)
@@ -103,8 +158,8 @@ class LLMApi:
         started = time.perf_counter()
         for attempt in range(max(1, attempts)):
             try:
-                response = await self.complete(gateway, upstream, messages)
-                text = response["choices"][0]["message"]["content"] or ""
+                response = await self.complete(gateway, upstream, messages, labels)
+                text = reply_text(response)
             except httpx.HTTPStatusError as e:
                 raise LLMError(f"HTTP {e.response.status_code}: {e.response.text[:300]}") from e
             except (httpx.HTTPError, KeyError, IndexError, TypeError) as e:
@@ -113,7 +168,7 @@ class LLMApi:
             totals["input"] += int(usage.get("prompt_tokens") or 0)
             totals["output"] += int(usage.get("completion_tokens") or 0)
             totals["cost"] += float(usage.get("cost") or 0.0)
-            choice = parse_choice(text, labels)
+            choice = parse_choice(text, labels, aliases)
             if choice is not None:
                 return LLMAnswer(
                     choice,
@@ -125,7 +180,7 @@ class LLMApi:
                 )
             messages += [
                 {"role": "assistant", "content": text[:2000]},
-                {"role": "user", "content": RETRY_PROMPT.format(answer=text.strip()[:200])},
+                {"role": "user", "content": RETRY_PROMPT.format(answer=text.strip()[:200], labels=json.dumps(labels))},
             ]
         raise IllegalAnswers(
             upstream, max(1, attempts), totals["input"], totals["output"], totals["cost"], time.perf_counter() - started

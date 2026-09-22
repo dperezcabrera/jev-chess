@@ -17,6 +17,7 @@ from experiments.option_order.experiment import (
     slot_bonus,
     top_two_gap,
 )
+from system_one_chess.settings import IllegalMovesSettings
 
 
 def test_the_position_set_is_large_distinct_and_legal():
@@ -95,6 +96,6 @@ def test_an_order_that_is_not_the_legal_moves_is_refused():
         def gateway(self, credentials=None):
             return Gateway("openrouter", "https://x", "key", "jev-test", 5, False)
 
-    chooser = JevMoveChooser(api=None, provider=Provider(), laya=None, llm=None)
+    chooser = JevMoveChooser(api=None, provider=Provider(), laya=None, llm=None, illegal=IllegalMovesSettings())
     with pytest.raises(ValueError):
         asyncio.run(chooser.choose(chess.Board(), order=[chess.Move.from_uci("e2e4")]))
