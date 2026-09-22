@@ -575,3 +575,4 @@ html:has(dialog[open]) { overflow: hidden; scrollbar-gutter: stable; }
 .player-bar .player-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .player-bar .player-note { margin-left: auto; font-size: 0.8125rem; font-weight: 500; color: var(--text-muted); white-space: nowrap; }
 .player-bar.to-move .player-note { color: var(--accent); font-weight: 700; }
+.topbar-link[hidden] { display: none; }
