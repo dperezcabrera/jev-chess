@@ -122,3 +122,44 @@ def test_an_empty_or_errored_reply_is_asked_again_and_is_not_an_illegal_move(mon
         assert "no answer" in str(error)
     else:
         raise AssertionError("persistent blanks must fail as a gateway error, not as a forfeit")
+
+
+def test_a_reply_cut_short_while_thinking_is_asked_again_with_a_bigger_budget_before_it_counts():
+    import asyncio
+    import json
+
+    import httpx
+
+    from system_one_chess.llm import MAX_TOKENS, TRUNCATED_TOKENS, LLMApi
+    from system_one_chess.provider import Gateway
+
+    bodies = []
+    replies = [
+        {
+            "message": {"content": "", "reasoning": "Let me analyze this position carefully..."},
+            "finish_reason": "length",
+        },
+        {"message": {"content": json.dumps({"choice": "e4"})}, "finish_reason": "stop"},
+        {"message": {"content": "", "reasoning": "Analyzing..."}, "finish_reason": "length"},
+        {"message": {"content": "", "reasoning": "Still analyzing..."}, "finish_reason": "length"},
+        {"message": {"content": json.dumps({"choice": "Nf3"})}, "finish_reason": "stop"},
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={"choices": [replies.pop(0)], "usage": {"prompt_tokens": 10, "completion_tokens": 100, "cost": 0.001}},
+        )
+
+    api = LLMApi()
+    api._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    gateway = Gateway("openrouter", "https://openrouter.ai/api", "key", "", 30.0, False)
+    labels = {"e4": None, "Nf3": None}
+    answer = asyncio.run(api.choose(gateway, "acme/thinker", {"fen": "x"}, "Which move?", labels, attempts=2))
+    assert answer.choice == "e4" and answer.illegal == 0, "one truncated reply is not an illegal move"
+    assert bodies[0]["max_tokens"] == MAX_TOKENS and "reasoning" not in bodies[0]
+    assert bodies[1]["max_tokens"] == TRUNCATED_TOKENS and bodies[1]["reasoning"] == {"effort": "low"}
+    answer = asyncio.run(api.choose(gateway, "acme/thinker", {"fen": "x"}, "Which move?", labels, attempts=2))
+    assert answer.choice == "Nf3" and answer.illegal == 1, "a second truncated reply in the same decision counts"
+    assert answer.illegal_answers[0].startswith("[ran out of tokens while thinking] Still analyzing")

@@ -3,7 +3,9 @@
 The chat completion is asked for a JSON object with the chosen label. A reply that names no option is an
 illegal move; the caller says how many the model may still make, and one more than that forfeits. An empty
 reply, or one the gateway flags as an error, is no answer at all: it is asked again and never counts as
-illegal, and after a few in a row the call fails like any other gateway error."""
+illegal, and after a few in a row the call fails like any other gateway error. A thinking model that ran out
+of tokens before answering is asked once more with a far larger budget and little reasoning, and only a second
+truncated reply counts as an illegal answer."""
 
 import asyncio
 import json
@@ -27,7 +29,8 @@ RETRY_PROMPT = (
     "{answer!r} is not one of the legal labels; that was an illegal move and one more loses the game. "
     'Reply with a JSON object only, {{"choice": "<label>"}}, copying one label exactly from this array: {labels}'
 )
-MAX_TOKENS = 4000
+MAX_TOKENS = 8000
+TRUNCATED_TOKENS = 24000
 TRIM = ".,;:!?*'\"`"
 BLANK_RETRIES = 3
 
@@ -130,10 +133,16 @@ class LLMApi:
         self._client = httpx.AsyncClient()
         self._no_schema: set[str] = set()
 
-    async def complete(self, gateway: Gateway, upstream: str, messages: list[dict], labels: list[str]) -> dict:
+    async def complete(
+        self, gateway: Gateway, upstream: str, messages: list[dict], labels: list[str], brief: bool = False
+    ) -> dict:
         """One chat completion, with a JSON schema that only admits the labels; a model that rejects the
-        schema (HTTP 400) is asked again without it and remembered."""
+        schema (HTTP 400) is asked again without it and remembered. `brief` gives a thinking model a much
+        larger token budget and asks for little reasoning, for when it ran out of tokens while thinking."""
         body = {"model": upstream, "messages": messages, "max_tokens": MAX_TOKENS, "temperature": 0}
+        if brief:
+            body["max_tokens"] = TRUNCATED_TOKENS
+            body["reasoning"] = {"effort": "low"}
         if upstream not in self._no_schema:
             body["response_format"] = choice_schema(labels)
         response = await self._post(gateway, body)
@@ -172,11 +181,12 @@ class LLMApi:
         totals = {"input": 0, "output": 0, "cost": 0.0}
         wrong: list[str] = []
         blanks = 0
+        truncated = 0
         started = time.perf_counter()
         attempt = 0
         while attempt < max(1, attempts):
             try:
-                response = await self.complete(gateway, upstream, messages, labels)
+                response = await self.complete(gateway, upstream, messages, labels, brief=truncated > 0)
                 text = reply_text(response)
                 finish = response["choices"][0].get("finish_reason")
             except httpx.HTTPStatusError as e:
@@ -193,8 +203,11 @@ class LLMApi:
                     raise LLMError(f"{upstream} returned no answer {blanks} times in a row (finish_reason {finish!r})")
                 await asyncio.sleep(1.0)
                 continue
-            attempt += 1
             choice = parse_choice(text, labels, aliases)
+            if choice is None and finish == "length" and truncated == 0:
+                truncated += 1
+                continue
+            attempt += 1
             if choice is not None:
                 return LLMAnswer(
                     choice,
@@ -205,7 +218,7 @@ class LLMApi:
                     attempt - 1,
                     tuple(wrong),
                 )
-            wrong.append(text.strip()[:200])
+            wrong.append(("[ran out of tokens while thinking] " if finish == "length" else "") + text.strip()[:200])
             messages += [
                 {"role": "assistant", "content": text[:2000]},
                 {"role": "user", "content": RETRY_PROMPT.format(answer=text.strip()[:200], labels=json.dumps(labels))},
