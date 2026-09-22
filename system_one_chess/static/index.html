@@ -38,6 +38,8 @@
 </header>
 <main class="layout">
   <section class="board-area" aria-label="Chess board">
+    <div class="board-column">
+    <div id="player-top" class="player-bar" aria-live="polite"></div>
     <div class="board-frame">
       <div id="board" class="board"></div>
       <div id="promotion" class="promotion" role="dialog" aria-modal="true" aria-label="Choose a piece to promote to" hidden>
@@ -48,6 +50,8 @@
           <button class="promotion-choice" type="button" data-piece="b" aria-label="Promote to bishop"><span class="cg-wrap" aria-hidden="true"><piece class="bishop"></piece></span></button>
         </div>
       </div>
+    </div>
+    <div id="player-bottom" class="player-bar" aria-live="polite"></div>
     </div>
   </section>
 
@@ -68,7 +72,7 @@
     </div>
 
     <section aria-labelledby="decision-title">
-      <h2 id="decision-title">Jev's last decision</h2>
+      <h2 id="decision-title">Last decision</h2>
       <table class="decision">
         <thead><tr><th class="col-move" scope="col">Move</th><th class="col-prob" scope="col">Probability</th></tr></thead>
         <tbody id="decision"></tbody>
@@ -258,9 +262,9 @@
     </div>
   </section>
 
-  <footer class="usage" aria-label="Jev usage for this game">
+  <footer class="usage" aria-label="Model usage for this game">
     <dl>
-      <div><dt>Jev calls</dt><dd id="usage-calls">0</dd></div>
+      <div><dt>Model calls</dt><dd id="usage-calls">0</dd></div>
       <div><dt>Input tokens</dt><dd id="usage-input">0</dd></div>
       <div><dt>Output tokens</dt><dd id="usage-output">0</dd></div>
       <div><dt>Avg. latency</dt><dd id="usage-latency">&ndash;</dd></div>

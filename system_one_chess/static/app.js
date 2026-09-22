@@ -70,7 +70,29 @@ function renderMoves(history) {
   $('moves-box').scrollTop = $('moves-box').scrollHeight;
 }
 
+function playerOf(state, colour) {
+  if (state.human === colour) return { id: 'human', name: 'You', logo: '' };
+  const id = state.models[colour];
+  return models.find((model) => model.id === id) || { id, name: id.replace(/^llm:[^/]*\//, ''), logo: '' };
+}
+
+function renderPlayers(state) {
+  const bottom = state.human === 'black' ? 'black' : 'white';
+  const top = bottom === 'white' ? 'black' : 'white';
+  for (const [slot, colour] of [['player-top', top], ['player-bottom', bottom]]) {
+    const bar = $(slot);
+    const player = playerOf(state, colour);
+    const toMove = !state.over && state.turn === colour;
+    bar.classList.toggle('to-move', toMove);
+    const swatch = Object.assign(document.createElement('span'), { className: `player-colour ${colour}` });
+    swatch.setAttribute('aria-hidden', 'true');
+    const note = Object.assign(document.createElement('span'), { className: 'player-note', textContent: state.over ? (state.result || '').split(' ')[0] : toMove ? 'to move' : colour });
+    bar.replaceChildren(swatch, logoNode(player), Object.assign(document.createElement('span'), { className: 'player-name', textContent: player.name, title: player.id }), note);
+  }
+}
+
 function render(state) {
+  renderPlayers(state);
   ground.set({
     fen: state.fen,
     orientation: state.human === 'black' ? 'black' : 'white',
@@ -88,6 +110,8 @@ function render(state) {
   syncAnalysis(state);
   $('game-id').textContent = state.game_id;
   renderDecision(state.jev_top);
+  const lastMover = state.history.length ? (state.turn === 'white' ? 'black' : 'white') : null;
+  $('decision-title').textContent = lastMover && state.human !== lastMover ? `${playerOf(state, lastMover).name}'s last decision` : 'Last decision';
   if (state.over && standingsKey !== state.game_id) {
     standingsKey = state.game_id;
     loadStandings();
@@ -220,13 +244,14 @@ for (const [key, depth] of Object.entries(DEPTHS)) $('depth').add(new Option(`${
 $('analyze').addEventListener('click', runAnalysis);
 
 async function askJev() {
-  const current = generation;
-  setStatus('Jev is deciding', { thinking: true });
+  const turn = generation;
+  const mover = current ? playerOf(current, current.turn).name : 'The model';
+  setStatus(`${mover} is deciding`, { thinking: true });
   try {
     const state = await api('/api/jev', {});
-    if (current === generation) render(state);
+    if (turn === generation) render(state);
   } catch (error) {
-    if (current === generation) setStatus(error.message, { error: true, retry: true });
+    if (turn === generation) setStatus(error.message, { error: true, retry: true });
   }
 }
 
@@ -331,7 +356,7 @@ function renderSettings(settings) {
     local: `Runs on this server, no key and no cost. Model: ${settings.model}.`,
     session: `Using your key ending in ${settings.key_hint}. Model: ${settings.model}.`,
     environment: `Using the server's key. Model: ${settings.model}.`,
-    none: 'No key set yet. Jev cannot move until you add one.',
+    none: 'No key set yet. The cloud models cannot move until you add one.',
   }[settings.key_source];
   syncProviderFields();
 }
@@ -761,11 +786,13 @@ if (PAGE === 'tournament') {
   $('nav-tournament').hidden = true;
   $('nav-play').hidden = false;
   $('new-game').lastChild.textContent = ' New tournament';
+  await loadModels();
   const view = await loadTournament();
   const initial = await refresh();
   if (view && !view.active && initial) openTournamentDialog({ cancellable: false });
 } else {
   loadStandings();
+  await loadModels();
   const initial = await refresh();
   if (initial && initial.history.length === 0) openSideDialog({ cancellable: false });
 }
