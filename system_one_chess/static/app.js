@@ -158,6 +158,7 @@ function clockSeconds(state, colour) {
   const used = state.usage_by_colour ? state.usage_by_colour[colour].seconds : 0;
   if (state.over || state.turn !== colour) return used;
   const base = typeof state.thinking_seconds === 'number' ? state.thinking_seconds : 0;
+  if (state.clock_paused) return used + base;
   const since = stateReceivedAt || (thinkingSince || Date.now());
   return used + base + Math.max(0, Date.now() - since) / 1000;
 }
@@ -221,8 +222,20 @@ function renderIllegalAttempts(state) {
   }));
 }
 
+function renderClockPause(state) {
+  const button = $('clock-pause');
+  const mine = PAGE === 'tournament' && selectedBoard && !selectedRound && state.human !== 'none' && state.humans_turn && !state.over;
+  button.hidden = !mine;
+  if (!mine) return;
+  button.setAttribute('aria-pressed', String(Boolean(state.clock_paused)));
+  button.querySelector('.icon-pause').hidden = Boolean(state.clock_paused);
+  button.querySelector('.icon-play').hidden = !state.clock_paused;
+  button.querySelector('span').textContent = state.clock_paused ? 'Clock paused, play' : 'Pause my clock';
+}
+
 function render(state) {
   stateReceivedAt = Date.now();
+  renderClockPause(state);
   renderPlayers(state);
   if (current && current.game_id !== state.game_id) viewPly = null;
   current = state;
@@ -490,6 +503,16 @@ $('pardon').addEventListener('click', async () => {
     if (turn === generation) render(state);
   } catch (error) {
     setStatus(error.message, { error: true, retry: true });
+  }
+});
+$('clock-pause').addEventListener('click', async () => {
+  if (!current || !selectedBoard) return;
+  const turn = ++generation;
+  try {
+    const state = await api(`/api/tournament/board/${selectedBoard}/clock/${current.clock_paused ? 'play' : 'pause'}`, {});
+    if (turn === generation) render(state);
+  } catch (error) {
+    setStatus(error.message, { error: true });
   }
 });
 $('flip-board').addEventListener('click', () => {
@@ -843,6 +866,7 @@ function miniNode(board, view, roundNumber) {
     }
     const live = !board.over && board.turn === colour ? (board.thinking_seconds || 0) : 0;
     const used = board.clock[colour] + live;
+    if (board.clock_paused && board.turn === colour) el.querySelector('.mini-clock').title = 'clock paused';
     const clock = el.querySelector('.mini-clock');
     clock.classList.toggle('active', !board.over && board.turn === colour);
     clock.classList.toggle('low', Boolean(board.time_limit) && board.time_limit - used < 300);

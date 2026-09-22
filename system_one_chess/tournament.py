@@ -341,6 +341,16 @@ class Tournament:
                 entry["task"] = asyncio.create_task(self._run_board(entry))
         return await self.view()
 
+    async def pause_clock(self, number: int) -> dict:
+        state = await self._board(number)["game"].pause_clock()
+        self._save()
+        return state
+
+    async def play_clock(self, number: int) -> dict:
+        state = await self._board(number)["game"].play_clock()
+        self._save()
+        return state
+
     async def retry(self, number: int) -> None:
         """Starts a board again after a gateway error stopped it."""
         entry = self._board(number)
@@ -658,6 +668,7 @@ class Tournament:
                 "time_limit": state["time_limit"],
                 "cost": usage["white"]["cost_usd"] + usage["black"]["cost_usd"],
                 "thinking_seconds": state["thinking_seconds"],
+                "clock_paused": state["clock_paused"],
                 "thinking_since": entry["thinking_since"],
                 "forfeited": entry["result"] is not None and (state["result"] or "").endswith("illegal moves"),
                 "error": entry["error"],

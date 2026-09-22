@@ -1050,3 +1050,33 @@ def test_a_tournament_can_be_paused_and_played_on(make_container, make_client):
     assert not view["paused"]
     until(lambda: len(client.get("/api/tournament/board/1").json()["history"]) > len(plies), timeout=15)
     assert client.delete("/api/tournament").json()["active"] is False
+
+
+def test_you_can_pause_your_own_clock_while_it_is_your_move(make_container, make_client):
+    import time
+
+    client = llm_app(make_container, make_client, [], [])
+    client.post("/api/tournament", json={"participants": ["jev"], "human": True, "rounds": 1, "time_limit": 60})
+    state = until(lambda: (s := client.get("/api/tournament/board/1").json()) and s["humans_turn"] and s)
+    assert not state["clock_paused"]
+    paused = client.post("/api/tournament/board/1/clock/pause").json()
+    assert paused["clock_paused"]
+    frozen = paused["thinking_seconds"]
+    time.sleep(0.4)
+    again = client.get("/api/tournament/board/1").json()
+    assert again["clock_paused"] and again["thinking_seconds"] == pytest.approx(frozen, abs=0.05), (
+        "the clock does not run"
+    )
+    view = client.get("/api/tournament").json()
+    assert view["rounds"][0]["pairings"][0]["clock_paused"]
+    origin, target = ("e2", "e4") if again["human"] == "white" else ("e7", "e5")
+    moved = client.post("/api/tournament/board/1/move", json={"from": origin, "to": target}).json()
+    colour = again["human"]
+    assert moved["usage_by_colour"][colour]["seconds"] < 0.3, "the paused time was not charged"
+    assert not moved["clock_paused"]
+    client.post("/api/models", json={"upstream": "acme/one"})
+    client.post(
+        "/api/tournament", json={"participants": ["jev", "llm:acme/one"], "human": False, "rounds": 1, "time_limit": 60}
+    )
+    assert client.post("/api/tournament/board/1/clock/pause").status_code == 409, "only your own clock, on your move"
+    assert client.delete("/api/tournament").json()["active"] is False

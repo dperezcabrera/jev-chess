@@ -188,6 +188,14 @@ class TournamentController:
     async def move(self, number: int, body: MoveRequest):
         return await self._tournament.human_move(number, body.origin, body.target, body.promotion)
 
+    @post("/board/{number}/clock/pause")
+    async def pause_clock(self, number: int):
+        return await self._tournament.pause_clock(number)
+
+    @post("/board/{number}/clock/play")
+    async def play_clock(self, number: int):
+        return await self._tournament.play_clock(number)
+
     @post("/board/{number}/retry")
     async def retry(self, number: int):
         await self._tournament.retry(number)

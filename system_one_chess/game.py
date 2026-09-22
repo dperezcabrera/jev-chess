@@ -51,6 +51,7 @@ class Game:
         self._moves: list[dict] = []
         self._deciding = False
         self._turn_started = time.monotonic()
+        self._clock_paused_at: float | None = None
         self._usage = self._empty_usage()
         self._usage_by_colour = {chess.WHITE: self._empty_usage(), chess.BLACK: self._empty_usage()}
 
@@ -82,6 +83,7 @@ class Game:
                 raise IllegalMove("malformed move") from e
             if move not in board.legal_moves:
                 raise IllegalMove(f"illegal move: {origin}{target}")
+            self._resume_clock()
             seconds = time.monotonic() - self._turn_started
             self._usage_by_colour[board.turn]["seconds"] += seconds
             self._check_time(board.turn)
@@ -164,12 +166,15 @@ class Game:
             "pardons": self._pardons,
             "time_limit": self._time_limit,
             "timed_out": self._colour_name(self._timed_out) if self._timed_out is not None else None,
+            "clock_paused": self._clock_paused_at is not None,
         }
 
     def restore(self, record: dict) -> None:
         colours = {"white": chess.WHITE, "black": chess.BLACK}
         self._reset(record["human"], record["models"]["white"], record["models"]["black"], record.get("time_limit"))
         self._timed_out = colours.get(record.get("timed_out"))
+        if record.get("clock_paused"):
+            self._clock_paused_at = time.monotonic()
         self._id = record["id"]
         for uci in record["moves_uci"]:
             self._board.push_uci(uci)
@@ -195,6 +200,31 @@ class Game:
         self._standings.record(
             self._id, self._players(), self._result() or "*", self._forfeited, self._illegal, self._usage_by_colour
         )
+
+    async def pause_clock(self) -> dict:
+        """Stops your clock while it is your move; the time until you play on is not yours."""
+        async with self._lock:
+            if self._over() or self._board.turn not in COLORS[self._human]:
+                raise IllegalMove("your clock only runs while it is your move")
+            if self._clock_paused_at is None:
+                self._clock_paused_at = time.monotonic()
+            return self._snapshot()
+
+    async def play_clock(self) -> dict:
+        async with self._lock:
+            self._resume_clock()
+            return self._snapshot()
+
+    def _resume_clock(self) -> None:
+        if self._clock_paused_at is not None:
+            self._turn_started += time.monotonic() - self._clock_paused_at
+            self._clock_paused_at = None
+
+    def _thinking_seconds(self) -> float:
+        if self._over():
+            return 0.0
+        end = self._clock_paused_at if self._clock_paused_at is not None else time.monotonic()
+        return end - self._turn_started
 
     async def pardon(self) -> dict:
         """Lets a game lost by illegal moves go on: the loser's illegal count starts again from zero. The forfeit
@@ -351,7 +381,8 @@ class Game:
             "history": history,
             "moves_uci": [move.uci() for move in board.move_stack],
             "fens": fens,
-            "thinking_seconds": 0.0 if over else time.monotonic() - self._turn_started,
+            "thinking_seconds": self._thinking_seconds(),
+            "clock_paused": self._clock_paused_at is not None,
             "time_limit": self._time_limit,
             "usage": dict(self._usage),
             "usage_by_colour": {
