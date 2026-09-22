@@ -868,3 +868,45 @@ def test_a_board_lost_by_illegal_moves_can_be_pardoned_while_its_round_is_on(mak
         "the game went on from the same position with a clean count"
     )
     assert client.post("/api/tournament/board/1/pardon").status_code == 409
+
+
+def test_players_can_join_a_running_tournament_and_play_the_current_round(make_container, make_client):
+    legal = [lambda labels: json.dumps({"choice": labels[0]})] * 600
+    client = llm_app(make_container, make_client, legal, [])
+    for upstream in ("acme/one", "acme/two", "acme/three"):
+        client.post("/api/models", json={"upstream": upstream})
+    assert client.post("/api/tournament/participants", json={"participants": ["llm:acme/one"]}).status_code == 409
+    view = client.post("/api/tournament", json={"participants": ["jev"], "human": True, "rounds": 2}).json()
+    assert view["boards_total"] == 1 and view["rounds"][0]["bye"] is None, "you against Jev, the round waits for you"
+
+    view = client.post("/api/tournament/participants", json={"participants": ["llm:acme/one"]}).json()
+    assert view["boards_total"] == 1 and view["rounds"][0]["bye"]["id"] == "llm:acme/one", (
+        "an odd newcomer waits with the bye"
+    )
+    rows = {row["id"]: row for row in view["standings"]}
+    assert rows["llm:acme/one"]["points"] == 1.0 and rows["llm:acme/one"]["byes"] == 1
+    assert client.post("/api/tournament/participants", json={"participants": ["llm:acme/one"]}).status_code == 409
+    assert client.post("/api/tournament/participants", json={"participants": ["llm:nobody/x"]}).status_code == 409
+
+    view = client.post("/api/tournament/participants", json={"participants": ["llm:acme/two"]}).json()
+    round_one = view["rounds"][0]
+    assert view["boards_total"] == 2 and round_one["bye"] is None, (
+        "the newcomer took the board of the player with the bye"
+    )
+    pair = {round_one["pairings"][1]["white"]["id"], round_one["pairings"][1]["black"]["id"]}
+    assert pair == {"llm:acme/one", "llm:acme/two"}
+    rows = {row["id"]: row for row in view["standings"]}
+    assert rows["llm:acme/one"]["points"] == 0.0 and rows["llm:acme/one"]["byes"] == 0, "the bye point went back"
+    until(lambda: (v := client.get("/api/tournament").json()) and v["rounds"][0]["pairings"][1]["result"] and v)
+    view = client.post("/api/tournament/participants", json={"participants": ["llm:acme/three"]}).json()
+    assert view["boards_total"] == 2 and view["rounds"][0]["bye"]["id"] == "llm:acme/three"
+    assert {row["id"] for row in view["standings"]} == {
+        "jev",
+        "human",
+        "llm:acme/one",
+        "llm:acme/two",
+        "llm:acme/three",
+    }
+    state = client.get("/api/tournament/board/1").json()
+    assert not state["over"] and state["human"] in ("white", "black"), "your board still waits for you"
+    assert client.delete("/api/tournament").json()["active"] is False

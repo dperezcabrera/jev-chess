@@ -276,6 +276,73 @@ class Tournament:
         entry["error"] = None
         entry["task"] = asyncio.create_task(self._run_board(entry))
 
+    async def add_participants(self, participants: list[str]) -> dict:
+        """Lets new players into a running tournament. They are paired among themselves on extra boards of the
+        current round, an odd one out joins the player who has the bye or takes it, and from the next round
+        they are paired like everyone else."""
+        if not self.active:
+            raise IllegalMove("no tournament is running")
+        ids = [model_id for model_id in dict.fromkeys(participants) if model_id not in self._participants]
+        if not ids:
+            raise IllegalMove("those players are already in the tournament")
+        known = {model.id: model for model in self._registry.list(self._credentials, self._session)}
+        unknown = [model_id for model_id in ids if model_id not in known]
+        if unknown:
+            raise IllegalMove(f"unknown model: {unknown[0]!r}")
+        not_ready = [model_id for model_id in ids if not known[model_id].ready]
+        if not_ready:
+            raise IllegalMove(f"{known[not_ready[0]].name} is not ready: {known[not_ready[0]].note}")
+        if len(self._participants) + len(ids) > MAX_PARTICIPANTS:
+            raise IllegalMove(f"a tournament holds at most {MAX_PARTICIPANTS} players")
+        async with self._lock:
+            for model_id in ids:
+                self._participants.append(model_id)
+                self._balance[model_id] = 0
+                self._opponents[model_id] = []
+                self._scores[model_id] = []
+                self._standings.ensure(model_id)
+            current = self._rounds[-1]
+            pool = list(ids)
+            if current["bye"] is not None:
+                pool.append(current["bye"])
+                self._byes.discard(current["bye"])
+                self._standings.bye_back(current["bye"])
+                current["bye"] = None
+            pairs, bye = pair_round(pool, self._played, self._balance, self._byes)
+            if bye is not None:
+                self._byes.add(bye)
+                self._standings.bye(bye)
+                current["bye"] = bye
+            new_boards = []
+            for white, black in pairs:
+                self._played.add(frozenset((white, black)))
+                self._balance[white] += 1
+                self._balance[black] -= 1
+                self._opponents[white].append(black)
+                self._opponents[black].append(white)
+                game = Game(self._chooser, self._credentials, self._registry, self._session, self._session_standings)
+                human = "white" if white == HUMAN else "black" if black == HUMAN else "none"
+                state = await game.new(human, white if white != HUMAN else black, black if black != HUMAN else white)
+                entry = {
+                    "white": white,
+                    "black": black,
+                    "game": game,
+                    "game_id": state["game_id"],
+                    "result": None,
+                    "pgn": "",
+                    "record": None,
+                    "error": None,
+                    "event": asyncio.Event(),
+                    "thinking_since": None,
+                    "task": None,
+                }
+                current["pairings"].append(entry)
+                new_boards.append(entry)
+            self._save()
+        for entry in new_boards:
+            entry["task"] = asyncio.create_task(self._run_board(entry))
+        return await self.view()
+
     async def pardon(self, number: int) -> dict:
         """Lets a board of the current round that was lost by illegal moves go on, as if the forfeit had not
         happened: its result leaves the standings and the game continues from the same position."""

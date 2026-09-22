@@ -40,6 +40,10 @@ class NewGameRequest(BaseModel):
     black: str = Field(default="jev", max_length=120)
 
 
+class ParticipantsRequest(BaseModel):
+    participants: list[str] = Field(min_length=1, max_length=MAX_PARTICIPANTS)
+
+
 class TournamentRequest(BaseModel):
     participants: list[str] = Field(max_length=MAX_PARTICIPANTS)
     human: bool = False
@@ -159,6 +163,10 @@ class TournamentController:
     @post("")
     async def start(self, body: TournamentRequest):
         return await self._tournament.start(body.participants, body.human, body.rounds)
+
+    @post("/participants")
+    async def add_participants(self, body: ParticipantsRequest):
+        return await self._tournament.add_participants(body.participants)
 
     @get("/board/{number}")
     async def board(self, number: int, round: int | None = None):

@@ -34,6 +34,12 @@ class Standings:
         row["points"] += 1.0
         row["byes"] += 1
 
+    def bye_back(self, model_id: str) -> None:
+        """Takes a bye away again, when the player it went to found an opponent after all."""
+        row = self._rows.setdefault(model_id, self._empty())
+        row["points"] -= 1.0
+        row["byes"] -= 1
+
     @staticmethod
     def _empty() -> dict:
         return {
