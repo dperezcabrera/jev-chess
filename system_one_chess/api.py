@@ -10,9 +10,9 @@ from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.staticfiles import StaticFiles
 
-from . import laya as local_model
 from .game import Game, IllegalMove
 from .jev import JevError
+from .laya import LayaModel
 from .models import LogoCache, ModelRegistry, SessionModels
 from .provider import LABELS, JevProvider, ProviderError, SessionCredentials
 from .settings import SessionSettings
@@ -105,9 +105,10 @@ class GameController:
 
 @controller(prefix="/api/settings")
 class SettingsController:
-    def __init__(self, provider: JevProvider, credentials: SessionCredentials):
+    def __init__(self, provider: JevProvider, credentials: SessionCredentials, laya: LayaModel):
         self._provider = provider
         self._credentials = credentials
+        self._laya = laya
 
     def _view(self) -> dict:
         gateway = self._provider.gateway(self._credentials)
@@ -120,7 +121,8 @@ class SettingsController:
             "key_source": source,
             "key_hint": gateway.api_key[-4:] if gateway.own_key else "",
             "providers": [{"id": name, "label": label} for name, label in LABELS.items()],
-            "laya_installed": local_model.available(),
+            "laya_installed": self._laya.ready,
+            "laya_mode": self._laya.mode,
         }
 
     @get("")

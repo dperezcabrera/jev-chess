@@ -25,6 +25,7 @@ class VercelSettings:
 class LayaSettings:
     model: str = "convaiinnovations/laya"
     device: str = ""
+    endpoint: str = "https://convaiinnovations-laya-demo.hf.space"
 
 
 @configured(prefix="JEV_", mapping="flat")

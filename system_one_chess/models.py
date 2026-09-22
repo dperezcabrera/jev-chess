@@ -11,7 +11,7 @@ from pathlib import Path
 import httpx
 from pico_ioc import cleanup, component
 
-from . import laya as local_model
+from .laya import REMOTE_NOTE, LayaModel
 from .provider import JevProvider, SessionCredentials
 from .settings import LLMSettings, ModelsSettings
 
@@ -111,8 +111,9 @@ def llm_name(upstream: str) -> str:
 
 @component
 class ModelRegistry:
-    def __init__(self, provider: JevProvider, settings: ModelsSettings, llm: LLMSettings):
+    def __init__(self, provider: JevProvider, settings: ModelsSettings, llm: LLMSettings, laya: LayaModel):
         self._provider = provider
+        self._laya = laya
         self._file = Path(settings.file) if settings.file else DEFAULT_MODELS_FILE
         self._default_reasoning = {"effort": llm.reasoning_effort} if llm.reasoning_effort else None
 
@@ -144,7 +145,7 @@ class ModelRegistry:
         logos = file["logos"]
         jev = self._provider.gateway(credentials, "jev")
         openrouter = self._provider.gateway_for("openrouter", credentials)
-        installed = local_model.available()
+        mode = self._laya.mode
         models = [
             Model(
                 "jev",
@@ -160,10 +161,10 @@ class ModelRegistry:
                 "laya",
                 "Laya",
                 "system_one",
-                "laya",
+                "laya" if mode == "local" else "huggingface",
                 self._provider.gateway_for("laya").model,
-                installed,
-                "" if installed else "not installed",
+                mode != "none",
+                {"local": "", "remote": REMOTE_NOTE, "none": "not installed"}[mode],
                 logo_path("laya", logos),
             ),
         ]

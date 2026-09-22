@@ -66,7 +66,7 @@ The key is only read at run time. It is never baked into the image.
 .venv/bin/pip install -e ".[laya]"
 ```
 
-Then pick Laya as the opponent on the start screen, or as the provider in the settings dialog behind the gear icon; with Laya installed and no key set it is the default. Loading the model takes a while the first time and needs about 2 to 3 GB of free memory; on a CPU each move takes a few hundred milliseconds, on a GPU tens. `LAYA_MODEL` and `LAYA_DEVICE` (`cpu`, `cuda`) override the defaults.
+Without the package, Laya still plays: the server asks Convai's public [demo Space](https://huggingface.co/spaces/convaiinnovations/laya-demo) on Hugging Face, whose playground takes the same state and questions and answers in the System One shape on a shared free GPU, about 2 to 3 seconds per move and subject to the Space's quotas. `LAYA_ENDPOINT` points at another deployment of that Space (or your own), and an empty value turns the remote path off. The Models dialog says which of the two is in use. Then pick Laya as the opponent on the start screen, or as the provider in the settings dialog behind the gear icon; with Laya installed and no key set it is the default. Loading the model takes a while the first time and needs about 2 to 3 GB of free memory; on a CPU each move takes a few hundred milliseconds, on a GPU tens. `LAYA_MODEL` and `LAYA_DEVICE` (`cpu`, `cuda`) override the defaults.
 
 One difference matters when comparing the two models. Laya has a budget of 192 tokens for all the options of a question, and a chess position with 30 legal moves described the way Jev gets them ("knight g8 to f6, gives check") needs about 400. So Laya receives the moves as bare labels in standard notation, `Nf6+`, which still carry captures, checks and mates, but not the "can be captured next turn" hint. Jev keeps the full descriptions. The measurements in this README are Jev's.
 
@@ -127,6 +127,7 @@ Then run:
 | `OPENROUTER_API_KEY` | one of the two | Your OpenRouter key |
 | `JEV_PROVIDER` | the gateway whose key is set | `vercel` or `openrouter`, only needed when both keys are set |
 | `LAYA_MODEL`, `LAYA_DEVICE` | `convaiinnovations/laya`, auto | The local model and where it runs |
+| `LAYA_ENDPOINT` | Convai's demo Space | Where Laya is asked when it is not installed locally; empty turns it off |
 | `JEV_MODEL` | `typesafe-ai/jev` on Vercel, `jev-latest` on OpenRouter | Model ID, for example `jev-1.13` on OpenRouter to pin a version |
 | `AI_GATEWAY_BASE_URL` | `https://ai-gateway.vercel.sh/typesafe` | Vercel's TypeSafe-compatible base URL |
 | `OPENROUTER_BASE_URL` | `https://openrouter.ai/api` | OpenRouter's System One base URL |

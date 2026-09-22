@@ -30,7 +30,7 @@ def jev_stub(pick):
 @pytest.fixture
 def app(make_container, make_client):
     def build(handler, api_key="test-key"):
-        flat = FlatDictSource({"OPENROUTER_API_KEY": api_key, "JEV_MODEL": "jev-test"})
+        flat = FlatDictSource({"OPENROUTER_API_KEY": api_key, "JEV_MODEL": "jev-test", "LAYA_ENDPOINT": ""})
         config = configuration(flat, DictSource({}))
         container = make_container("system_one_chess", "pico_fastapi", config=config)
         build.container = container
@@ -323,6 +323,7 @@ def laya_app(make_container, make_client, monkeypatch, installed=True, **env):
     from system_one_chess.laya import LayaModel
 
     monkeypatch.setattr(laya_module, "available", lambda: installed)
+    env.setdefault("LAYA_ENDPOINT", "")
     container = make_container(
         "system_one_chess", "pico_fastapi", config=configuration(FlatDictSource(env), DictSource({}))
     )
@@ -422,6 +423,7 @@ def llm_app(make_container, make_client, replies, seen, **env):
     from system_one_chess.llm import LLMApi
 
     env.setdefault("TOURNAMENT_DIR", tempfile.mkdtemp(prefix="tournaments-"))
+    env.setdefault("LAYA_ENDPOINT", "")
     config = configuration(FlatDictSource({"OPENROUTER_API_KEY": "server-key", **env}), DictSource({}))
     container = make_container("system_one_chess", "pico_fastapi", config=config)
     container.get(LLMApi)._client = httpx.AsyncClient(transport=httpx.MockTransport(llm_stub(replies, seen)))
@@ -954,3 +956,43 @@ def test_resuming_a_tournament_in_another_session_takes_it_over(make_container, 
     assert taken["active"] and taken["id"] == tournament_id
     assert first.get("/api/tournament").json()["active"] is False, "the first session no longer plays it"
     assert second.delete("/api/tournament").json()["active"] is False
+
+
+def test_laya_answers_through_the_demo_space_when_it_is_not_installed(make_container, make_client):
+    from system_one_chess.laya import LayaModel
+
+    calls = []
+
+    def space(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, request.url.path, request.content))
+        if request.method == "POST":
+            body = json.loads(request.content)
+            state, questions = json.loads(body["data"][0]), json.loads(body["data"][1])
+            assert state["game"] == "chess" and "move" in questions and questions["move"]["type"] == "choice"
+            return httpx.Response(200, json={"event_id": "abc"})
+        answer = {
+            "model": "laya",
+            "answers": {
+                "move": {"type": "choice", "choice": "d4", "probabilities": {"e4": 0.4, "d4": 0.6}, "confidence": 0.2}
+            },
+            "usage": {"input_tokens": 200, "output_tokens": 0},
+            "latency_ms": 2100.0,
+        }
+        text = (
+            "event: complete\ndata: "
+            + json.dumps([{"headers": ["question", "answer"], "data": [["move", "d4"]]}, json.dumps(answer)])
+            + "\n\n"
+        )
+        return httpx.Response(200, text=text)
+
+    client = llm_app(make_container, make_client, [], [], LAYA_ENDPOINT="https://laya.test")
+    llm_app.container.get(LayaModel)._client = httpx.AsyncClient(transport=httpx.MockTransport(space))
+    settings = client.get("/api/settings").json()
+    assert settings["laya_installed"] and settings["laya_mode"] == "remote"
+    laya = next(m for m in client.get("/api/models").json()["models"] if m["id"] == "laya")
+    assert laya["ready"] and laya["provider"] == "huggingface" and "Space" in laya["note"]
+    state = client.post("/api/new", json={"human": "black", "white": "laya"}).json()
+    state = client.post("/api/jev").json()
+    assert state["history"] == ["d4"] and state["jev_top"][0]["san"] == "d4"
+    assert [c[0] for c in calls] == ["POST", "GET"] and calls[0][1] == "/gradio_api/call/run_playground"
+    assert state["usage"]["input_tokens"] == 200 and state["usage"]["cost_usd"] == 0.0
