@@ -360,3 +360,34 @@ def test_choosing_laya_when_it_is_not_installed_explains_how_to_install_it(make_
     client.post("/api/move", json={"from": "e2", "to": "e4"})
     response = client.post("/api/jev")
     assert response.status_code == 502 and "pip install" in response.json()["error"]
+
+
+def test_each_colour_can_be_played_by_a_different_model(make_container, make_client, monkeypatch):
+    seen = []
+
+    def gateway_handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        seen.append("jev")
+        san = next(iter(body["questions"]["move"]["criteria"]))
+        return httpx.Response(200, json={"answers": {"move": {"choice": san, "probabilities": {san: 1.0}}}})
+
+    from system_one_chess import laya as laya_module
+    from system_one_chess.laya import LayaModel
+
+    monkeypatch.setattr(laya_module, "available", lambda: True)
+    config = configuration(FlatDictSource({"OPENROUTER_API_KEY": "server-key"}), DictSource({}))
+    container = make_container("system_one_chess", "pico_fastapi", config=config)
+    container.get(JevApi)._client = httpx.AsyncClient(transport=httpx.MockTransport(gateway_handler))
+    fake = FakeLaya()
+    monkeypatch.setattr(container.get(LayaModel), "_load", lambda: fake)
+    client = make_client(container)
+
+    state = client.post("/api/new", json={"human": "none", "white": "jev", "black": "laya"}).json()
+    assert state["models"] == {"white": "jev", "black": "laya"}
+    for _ in range(4):
+        client.post("/api/jev")
+    assert seen == ["jev", "jev"] and len(fake.asked) == 2
+    pgn = client.get("/api/pgn").text
+    assert '[White "Jev (jev-latest)"]' in pgn and '[Black "Laya (convaiinnovations/laya)"]' in pgn
+
+    assert client.post("/api/new", json={"human": "white", "black": "gpt"}).status_code == 422

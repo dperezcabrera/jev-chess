@@ -69,8 +69,13 @@ class JevProvider:
         if self._default is None:
             self._default = LOCAL if local_model.available() else "openrouter"
 
-    def gateway(self, credentials: SessionCredentials | None = None) -> Gateway:
-        name = (credentials.provider if credentials else "") or self._default
+    def gateway(self, credentials: SessionCredentials | None = None, model: str = "") -> Gateway:
+        """`model` is `laya` to run locally, else the session's gateway: Jev through Vercel or OpenRouter, or Laya."""
+        if model == LOCAL:
+            return self.gateway_for(LOCAL, credentials)
+        return self.gateway_for((credentials.provider if credentials else "") or self._default, credentials)
+
+    def gateway_for(self, name: str, credentials: SessionCredentials | None = None) -> Gateway:
         if name not in self._settings:
             raise ProviderError(f"unknown provider: {name!r}")
         entry = self._settings[name]

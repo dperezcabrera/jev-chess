@@ -44,7 +44,7 @@ If the key is already exported in your shell, pass it through without typing it:
 docker run --rm -p 127.0.0.1:8000:8000 -e AI_GATEWAY_API_KEY -e OPENROUTER_API_KEY ghcr.io/dperezcabrera/system-one-chess:latest
 ```
 
-Available tags: `latest` and the version number, such as `0.3.2`.
+Available tags: `latest` and the version number, such as `0.4.0`.
 
 To build the image yourself instead:
 
@@ -65,7 +65,7 @@ The key is only read at run time. It is never baked into the image.
 .venv/bin/pip install -e ".[laya]"
 ```
 
-Then pick Laya in the settings dialog behind the gear icon; with Laya installed and no key set it is the default. Loading the model takes a while the first time and needs about 2 to 3 GB of free memory; on a CPU each move takes a few hundred milliseconds, on a GPU tens. `LAYA_MODEL` and `LAYA_DEVICE` (`cpu`, `cuda`) override the defaults.
+Then pick Laya as the opponent on the start screen, or as the provider in the settings dialog behind the gear icon; with Laya installed and no key set it is the default. Loading the model takes a while the first time and needs about 2 to 3 GB of free memory; on a CPU each move takes a few hundred milliseconds, on a GPU tens. `LAYA_MODEL` and `LAYA_DEVICE` (`cpu`, `cuda`) override the defaults.
 
 One difference matters when comparing the two models. Laya has a budget of 192 tokens for all the options of a question, and a chess position with 30 legal moves described the way Jev gets them ("knight g8 to f6, gives check") needs about 400. So Laya receives the moves as bare labels in standard notation, `Nf6+`, which still carry captures, checks and mates, but not the "can be captured next turn" hint. Jev keeps the full descriptions. The measurements in this README are Jev's.
 
@@ -136,7 +136,7 @@ Then run:
 
 ## Playing
 
-Pick a side on the start screen: White, Black, or Spectator (Jev plays both sides). One click starts the game. Drag or click pieces; only legal moves are allowed. When a pawn reaches the last rank, pick the piece on the board; click elsewhere or press Escape to take the move back.
+The start screen takes three choices: play against a model or watch two models; which model, Jev or Laya; and your side, or which model takes each colour. So the same table can host you against Jev, you against Laya, or Jev against Laya, and the analysis reports each colour on its own. Drag or click pieces; only legal moves are allowed. When a pawn reaches the last rank, pick the piece on the board; click elsewhere or press Escape to take the move back.
 
 Analysis starts on its own when the game ends, or any time from **Analyze game**. Pick a depth first: Fast, Standard, Deep or Deepest. Deeper is slower and steadier; Standard analyzes a short game in a couple of seconds.
 
@@ -200,7 +200,7 @@ Rules, legality, game-over detection and PGN come from [python-chess](https://py
 | GET | `/api/settings` | | Provider, model and whether a key is set, never the key |
 | POST | `/api/settings` | `{"provider": "vercel" \| "openrouter", "api_key": "..."}` | Use this provider and key for the session |
 | DELETE | `/api/settings` | | Forget the session's key |
-| POST | `/api/new` | `{"human": "white" \| "black" \| "none"}` | Start a new game |
+| POST | `/api/new` | `{"human": "white" \| "black" \| "none", "white": "jev" \| "laya", "black": "jev" \| "laya"}` | Start a new game; `white` and `black` name the model behind each colour |
 
 Illegal or out-of-turn moves return `409`, malformed bodies `422`, and Jev or OpenRouter failures `502` with an `error` message.
 
@@ -248,7 +248,7 @@ gh auth token | docker login ghcr.io -u dperezcabrera --password-stdin
 Then build, tag and push:
 
 ```sh
-docker build -t ghcr.io/dperezcabrera/system-one-chess:0.3.2 -t ghcr.io/dperezcabrera/system-one-chess:latest .
+docker build -t ghcr.io/dperezcabrera/system-one-chess:0.4.0 -t ghcr.io/dperezcabrera/system-one-chess:latest .
 docker push --all-tags ghcr.io/dperezcabrera/system-one-chess
 ```
 

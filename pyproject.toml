@@ -1,6 +1,6 @@
 [project]
 name = "system-one-chess"
-version = "0.3.2"
+version = "0.4.0"
 description = "How good is a System One model at chess? Play Jev or Laya and measure their moves with Stockfish"
 readme = "README.md"
 license = "GPL-3.0-or-later"

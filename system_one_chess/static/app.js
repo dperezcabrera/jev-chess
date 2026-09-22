@@ -159,7 +159,7 @@ async function runAnalysis() {
 }
 
 function playerName(color) {
-  const who = currentHuman === color ? 'You' : 'Jev';
+  const who = currentHuman === color ? 'You' : (current && current.models && current.models[color] === 'laya' ? 'Laya' : 'Jev');
   return `${color === 'white' ? 'White' : 'Black'} (${who})`;
 }
 
@@ -410,23 +410,59 @@ $('pgn-copy').addEventListener('click', async () => {
 });
 
 const dialog = $('side-dialog');
+const sideForm = $('side-form');
+let layaInstalled = true;
+
+function syncSideDialog() {
+  const play = sideForm.elements.mode.value === 'play';
+  const opponent = sideForm.elements.opponent.value;
+  $('opponent-segment').hidden = !play;
+  $('side-cards').hidden = !play;
+  $('white-segment').hidden = play;
+  $('black-segment').hidden = play;
+  $('watch-cards').hidden = play;
+  const name = (model) => (model === 'laya' ? 'Laya' : 'Jev');
+  $('black-hint').textContent = `${name(opponent)} opens the game`;
+  $('watch-name').textContent = `${name(sideForm.elements.white.value)} vs ${name(sideForm.elements.black.value)}`;
+  $('side-footnote').textContent = play ? 'Pick your side to start playing right away.' : 'Both sides are decided by a model; you watch.';
+  for (const input of sideForm.querySelectorAll('input[value="laya"]')) {
+    input.disabled = !layaInstalled;
+    input.closest('.segment-option').classList.toggle('segment-unavailable', !layaInstalled);
+  }
+  $('opponent-laya-note').textContent = layaInstalled ? 'local, free' : 'not installed';
+}
 
 function openSideDialog({ cancellable }) {
   $('side-cancel').hidden = !cancellable;
+  $('side-error').textContent = '';
+  fetch('api/settings').then((response) => response.json()).then((settings) => {
+    layaInstalled = Boolean(settings.laya_installed);
+    syncSideDialog();
+  }).catch(() => {});
+  syncSideDialog();
   dialog.showModal();
-  dialog.querySelector(`button[value="${currentHuman}"]`).focus();
+  sideForm.elements.mode[0].focus();
 }
 
 $('new-game').addEventListener('click', () => openSideDialog({ cancellable: true }));
 $('side-cancel').addEventListener('click', () => dialog.close());
+sideForm.addEventListener('change', syncSideDialog);
 
-$('side-form').addEventListener('submit', async (event) => {
+sideForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const play = sideForm.elements.mode.value === 'play';
+  const human = play ? event.submitter.value : 'none';
+  const opponent = sideForm.elements.opponent.value;
+  const body = play
+    ? { human, white: human === 'white' ? 'jev' : opponent, black: human === 'black' ? 'jev' : opponent }
+    : { human, white: sideForm.elements.white.value, black: sideForm.elements.black.value };
   const current = ++generation;
   try {
-    const state = await api('/api/new', { human: event.submitter.value });
+    const state = await api('/api/new', body);
+    dialog.close();
     if (current === generation) render(state);
   } catch (error) {
-    if (current === generation) setStatus(error.message, { error: true, retry: true });
+    $('side-error').textContent = error.message;
   }
 });
 

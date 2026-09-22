@@ -92,8 +92,8 @@ class JevMoveChooser:
         self._provider = provider
         self._laya = laya
 
-    def model_for(self, credentials: SessionCredentials | None = None) -> str:
-        return self._provider.gateway(credentials).model
+    def model_for(self, credentials: SessionCredentials | None = None, model: str = "") -> str:
+        return self._provider.gateway(credentials, model).model
 
     async def ask(
         self,
@@ -101,9 +101,10 @@ class JevMoveChooser:
         instructions: str,
         criteria: dict[str, str],
         credentials: SessionCredentials | None = None,
+        model: str = "",
     ) -> Answer:
         """One Choice question about a position: `criteria` maps each option label to its description."""
-        gateway = self._provider.gateway(credentials)
+        gateway = self._provider.gateway(credentials, model)
         if not gateway.ready:
             raise JevError(NO_KEY)
         if gateway.local and len(criteria) > 8:
@@ -143,6 +144,7 @@ class JevMoveChooser:
         board: chess.Board,
         credentials: SessionCredentials | None = None,
         order: list[chess.Move] | None = None,
+        model: str = "",
     ) -> Decision:
         """Ask Jev for a move; `order` lists the legal moves in the order to offer them, to test whether it matters."""
         moves = list(board.legal_moves)
@@ -158,7 +160,7 @@ class JevMoveChooser:
             "Never leave a piece where it can be captured for free."
         )
         answer = await self.ask(
-            board, instructions, {san: describe(board, m) for san, m in options.items()}, credentials
+            board, instructions, {san: describe(board, m) for san, m in options.items()}, credentials, model
         )
         return Decision(
             move=options[answer.choice],

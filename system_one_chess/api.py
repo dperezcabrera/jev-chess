@@ -32,6 +32,8 @@ class SettingsRequest(BaseModel):
 
 class NewGameRequest(BaseModel):
     human: Literal["white", "black", "none"] = "white"
+    white: Literal["jev", "laya"] = "jev"
+    black: Literal["jev", "laya"] = "jev"
 
 
 @controller
@@ -66,7 +68,7 @@ class GameController:
 
     @post("/new")
     async def new(self, body: NewGameRequest):
-        return await self._game.new(body.human)
+        return await self._game.new(body.human, body.white, body.black)
 
 
 @controller(prefix="/api/settings")

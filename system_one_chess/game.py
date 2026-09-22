@@ -10,6 +10,8 @@ from .jev import JevMoveChooser
 from .provider import SessionCredentials
 
 COLORS = {"white": {chess.WHITE}, "black": {chess.BLACK}, "none": set()}
+MODELS = ("jev", "laya")
+NAMES = {"jev": "Jev", "laya": "Laya"}
 
 
 class IllegalMove(Exception):
@@ -24,18 +26,21 @@ class Game:
         self._lock = asyncio.Lock()
         self._reset("white")
 
-    def _reset(self, human: str) -> None:
+    def _reset(self, human: str, white: str = "jev", black: str = "jev") -> None:
         self._id = uuid.uuid4().hex[:8]
         self._board = chess.Board()
         self._human = human
+        self._models = {chess.WHITE: white, chess.BLACK: black}
         self._jev_top: list[dict] = []
         self._usage = {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0, "seconds": 0.0}
 
-    async def new(self, human: str) -> dict:
+    async def new(self, human: str, white: str = "jev", black: str = "jev") -> dict:
         if human not in COLORS:
             raise IllegalMove(f"unknown color: {human!r}")
+        if white not in MODELS or black not in MODELS:
+            raise IllegalMove(f"unknown model: {white!r}, {black!r}")
         async with self._lock:
-            self._reset(human)
+            self._reset(human, white, black)
             return self._snapshot()
 
     async def snapshot(self) -> dict:
@@ -63,7 +68,7 @@ class Game:
             board = self._board
             if board.is_game_over(claim_draw=True) or board.turn in COLORS[self._human]:
                 raise IllegalMove("it is not Jev's turn")
-            decision = await self._chooser.choose(board, self._credentials)
+            decision = await self._chooser.choose(board, self._credentials, model=self._models[board.turn])
             self._jev_top = [{"san": san, "probability": p} for san, p in decision.top]
             self._usage["calls"] += 1
             self._usage["input_tokens"] += decision.input_tokens
@@ -76,12 +81,16 @@ class Game:
     async def pgn(self) -> tuple[str, str]:
         async with self._lock:
             game = chess.pgn.Game.from_board(self._board)
-            jev = f"Jev ({self._chooser.model_for(self._credentials)})"
+
+            def player(color):
+                model = self._models[color]
+                return f"{NAMES[model]} ({self._chooser.model_for(self._credentials, model)})"
+
             game.headers["Event"] = "system-one-chess"
             game.headers["Site"] = "https://github.com/dperezcabrera/system-one-chess"
             game.headers["Date"] = datetime.now(UTC).strftime("%Y.%m.%d")
-            game.headers["White"] = "Human" if self._human == "white" else jev
-            game.headers["Black"] = "Human" if self._human == "black" else jev
+            game.headers["White"] = "Human" if self._human == "white" else player(chess.WHITE)
+            game.headers["Black"] = "Human" if self._human == "black" else player(chess.BLACK)
             game.headers["Result"] = self._board.result(claim_draw=True)
             return f"system-one-chess-{self._id}.pgn", str(game) + "\n"
 
@@ -108,6 +117,7 @@ class Game:
             "fen": board.fen(),
             "turn": "white" if board.turn else "black",
             "human": self._human,
+            "models": {"white": self._models[chess.WHITE], "black": self._models[chess.BLACK]},
             "humans_turn": humans_turn,
             "jevs_turn": not over and not humans_turn,
             "dests": dests,

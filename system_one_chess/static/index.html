@@ -287,32 +287,70 @@
   </div>
 </dialog>
 <dialog id="side-dialog" class="side-dialog" aria-labelledby="side-title">
-  <form id="side-form" method="dialog" class="side-form">
+  <form id="side-form" class="side-form">
     <header class="side-header">
-      <h2 id="side-title">Choose your side</h2>
-      <p>Jev answers every move with a single typed decision.</p>
+      <h2 id="side-title">New game</h2>
+      <p>Three choices and the game starts. A System One model answers every move with a single typed decision.</p>
     </header>
 
-    <div class="side-options" role="group" aria-labelledby="side-title">
-      <button class="side-card side-card-white" type="submit" name="human" value="white">
-        <span class="side-art cg-wrap" aria-hidden="true"><piece class="king white"></piece></span>
-        <span class="side-name">White</span>
-        <span class="side-hint">You move first</span>
-      </button>
-      <button class="side-card side-card-black" type="submit" name="human" value="black">
-        <span class="side-art cg-wrap" aria-hidden="true"><piece class="king black"></piece></span>
-        <span class="side-name">Black</span>
-        <span class="side-hint">Jev opens the game</span>
-      </button>
-      <button class="side-card side-card-watch" type="submit" name="human" value="none">
-        <span class="side-art side-art-pair cg-wrap" aria-hidden="true"><piece class="king white"></piece><piece class="king black"></piece></span>
-        <span class="side-name">Spectator</span>
-        <span class="side-hint">Jev plays both sides</span>
-      </button>
+    <div class="side-body">
+      <fieldset class="segment" id="mode-segment">
+        <legend>Mode</legend>
+        <div class="segment-options">
+          <label class="segment-option"><input type="radio" name="mode" value="play" checked><span>Play against a model</span></label>
+          <label class="segment-option"><input type="radio" name="mode" value="watch"><span>Watch two models</span></label>
+        </div>
+      </fieldset>
+
+      <fieldset class="segment" id="opponent-segment">
+        <legend>Opponent</legend>
+        <div class="segment-options">
+          <label class="segment-option"><input type="radio" name="opponent" value="jev" checked><span>Jev</span><small>cloud</small></label>
+          <label class="segment-option"><input type="radio" name="opponent" value="laya"><span>Laya</span><small id="opponent-laya-note">local</small></label>
+        </div>
+      </fieldset>
+
+      <fieldset class="segment" id="white-segment" hidden>
+        <legend>White</legend>
+        <div class="segment-options">
+          <label class="segment-option"><input type="radio" name="white" value="jev" checked><span>Jev</span></label>
+          <label class="segment-option"><input type="radio" name="white" value="laya"><span>Laya</span></label>
+        </div>
+      </fieldset>
+
+      <fieldset class="segment" id="black-segment" hidden>
+        <legend>Black</legend>
+        <div class="segment-options">
+          <label class="segment-option"><input type="radio" name="black" value="jev" checked><span>Jev</span></label>
+          <label class="segment-option"><input type="radio" name="black" value="laya"><span>Laya</span></label>
+        </div>
+      </fieldset>
+
+      <div class="side-options" id="side-cards" role="group" aria-label="Your side">
+        <button class="side-card side-card-white" type="submit" name="human" value="white">
+          <span class="side-art cg-wrap" aria-hidden="true"><piece class="king white"></piece></span>
+          <span class="side-name">White</span>
+          <span class="side-hint">You move first</span>
+        </button>
+        <button class="side-card side-card-black" type="submit" name="human" value="black">
+          <span class="side-art cg-wrap" aria-hidden="true"><piece class="king black"></piece></span>
+          <span class="side-name">Black</span>
+          <span class="side-hint" id="black-hint">Jev opens the game</span>
+        </button>
+      </div>
+
+      <div class="side-options side-options-watch" id="watch-cards" role="group" aria-label="Start" hidden>
+        <button class="side-card side-card-watch" type="submit" name="human" value="none">
+          <span class="side-art side-art-pair cg-wrap" aria-hidden="true"><piece class="king white"></piece><piece class="king black"></piece></span>
+          <span class="side-name" id="watch-name">Jev vs Jev</span>
+          <span class="side-hint">Start watching</span>
+        </button>
+      </div>
+      <p id="side-error" class="settings-error" role="alert"></p>
     </div>
 
     <footer class="side-footer">
-      <p class="side-footnote">Pick a side to start playing right away.</p>
+      <p class="side-footnote" id="side-footnote">Pick your side to start playing right away.</p>
       <button id="side-cancel" class="button button-ghost" type="button">Cancel</button>
     </footer>
   </form>
