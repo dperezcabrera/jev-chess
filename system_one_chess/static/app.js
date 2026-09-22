@@ -770,7 +770,6 @@ function renderTournament(view) {
   tournament = view;
   const status = $('tournament-status');
   $('tournament-stop').hidden = !view.active;
-  $('tournament-add').hidden = !view.active;
   const pauseButton = $('tournament-pause');
   pauseButton.hidden = !view.active;
   pauseButton.setAttribute('aria-pressed', String(Boolean(view.paused)));
@@ -1005,11 +1004,10 @@ const ROUND_CHOICES = [1, 2, 3, 4, 5, 6, 7];
 function renderParticipants() {
   const box = $('participants');
   const picked = new Set([...tournamentForm.querySelectorAll('input[name="participant"]:checked')].map((input) => input.value));
-  const inTournament = new Set(dialogMode === 'add' && tournament ? tournament.standings.map((row) => row.id) : []);
-  box.replaceChildren(...models.filter((model) => !inTournament.has(model.id)).map((model) => {
+  box.replaceChildren(...models.map((model) => {
     const chip = document.createElement('label');
     chip.className = 'chip';
-    const input = Object.assign(document.createElement('input'), { type: 'checkbox', name: 'participant', value: model.id, disabled: !model.ready, checked: model.ready && (picked.size ? picked.has(model.id) : dialogMode !== 'add' && model.kind === 'system_one') });
+    const input = Object.assign(document.createElement('input'), { type: 'checkbox', name: 'participant', value: model.id, disabled: !model.ready, checked: model.ready && (picked.size ? picked.has(model.id) : model.kind === 'system_one') });
     const text = Object.assign(document.createElement('span'), { className: 'chip-text' });
     const tier = (suggestedTiers.get(model.upstream) || (model.kind === 'system_one' ? 'System One' : 'LLM'));
     text.append(Object.assign(document.createElement('span'), { className: 'chip-name', textContent: model.name }), Object.assign(document.createElement('small'), { textContent: model.ready ? `${tier} \u00b7 ${model.upstream}` : model.note }));
@@ -1038,16 +1036,6 @@ function tournamentChoice() {
 
 function syncTournamentDialog() {
   const { participants, human, rounds } = tournamentChoice();
-  if (dialogMode === 'add') {
-    const total = (tournament ? tournament.standings.length : 0) + participants.length;
-    const bye = tournament && tournament.rounds.length ? tournament.rounds[tournament.rounds.length - 1].bye : null;
-    const oddOut = (participants.length + (bye ? 1 : 0)) % 2 === 1;
-    $('tournament-start').disabled = participants.length === 0;
-    $('tournament-start').querySelector('.side-name').textContent = 'Add to the tournament';
-    $('tournament-hint').textContent = participants.length === 0 ? 'Pick who joins' : `${participants.length} joining, ${total} players in all${oddOut ? ', one waits with the bye this round' : ', all play this round'}`;
-    return;
-  }
-  $('tournament-start').querySelector('.side-name').textContent = 'Start the tournament';
   const players = participants.length + (human ? 1 : 0);
   const games = Math.floor(players / 2) * rounds;
   $('tournament-start').disabled = players < 2;
@@ -1092,24 +1080,14 @@ async function loadSaved() {
   }
 }
 
-let dialogMode = 'new';
-
-function openTournamentDialog(mode = 'new') {
-  dialogMode = mode;
-  const adding = mode === 'add';
-  $('tournament-dialog-title').textContent = adding ? 'Add players' : 'New tournament';
-  $('you-segment').hidden = adding;
-  $('rounds-segment').hidden = adding;
-  $('time-segment').hidden = adding;
+function openTournamentDialog() {
   $('saved-section').hidden = true;
   $('tournament-error').textContent = '';
   renderParticipants();
   loadModels();
-  if (!adding) loadSaved();
+  loadSaved();
   tournamentDialog.showModal();
 }
-
-$('tournament-add').addEventListener('click', () => openTournamentDialog('add'));
 
 tournamentForm.addEventListener('change', syncTournamentDialog);
 $('tournament-cancel').addEventListener('click', () => tournamentDialog.close());
@@ -1117,14 +1095,6 @@ tournamentForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const current = ++generation;
   try {
-    if (dialogMode === 'add') {
-      const view = await api('/api/tournament/participants', { participants: tournamentChoice().participants });
-      tournamentDialog.close();
-      renderTournament(view);
-      clearTimeout(pollTimer);
-      await pollTournament();
-      return;
-    }
     const view = await api('/api/tournament', tournamentChoice());
     tournamentDialog.close();
     selectedBoard = view.human_board || 1;
