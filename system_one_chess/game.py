@@ -254,6 +254,24 @@ class Game:
             self._usage["seconds"] -= float(move.get("seconds") or 0.0)
             self._illegal[colour] -= int(move.get("illegal") or 0)
 
+    async def rewind(self, plies: int) -> dict:
+        """Takes the last `plies` moves back, whoever made them, and reopens the game from there: their calls,
+        tokens, time and cost leave the totals, a forfeit or a loss on time is cleared. For experiments."""
+        async with self._lock:
+            if self._deciding:
+                raise IllegalMove("wait for the model's move, then rewind")
+            if not 1 <= plies <= len(self._board.move_stack):
+                raise IllegalMove(f"the game has {len(self._board.move_stack)} moves to take back")
+            for _ in range(plies):
+                self._unmake()
+            self._forfeited = None
+            self._timed_out = None
+            self._takebacks += 1
+            self._turn_started = time.monotonic()
+            self._clock_paused_at = None
+            self._jev_top = []
+            return self._snapshot()
+
     async def pause_clock(self) -> dict:
         """Stops your clock while it is your move; the time until you play on is not yours."""
         async with self._lock:

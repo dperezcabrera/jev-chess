@@ -1230,3 +1230,29 @@ def test_options_say_when_a_move_draws_by_repetition_stalemate_or_material():
     assert state["material_balance"].startswith("you are up") and state["halfmoves_since_capture_or_pawn_move"] == 0
     down = chess.Board("7k/8/8/8/8/8/8/K6R b - - 0 1")
     assert material_balance(down) == "you are down 5 points of material"
+
+
+def test_a_finished_board_of_the_current_round_can_be_rewound_and_played_on(make_container, make_client):
+    legal = [lambda labels: json.dumps({"choice": labels[0]})] * 400
+    client = llm_app(make_container, make_client, legal, [])
+    for upstream in ("openai/gpt-5-mini", "acme/two"):
+        client.post("/api/models", json={"upstream": upstream})
+    body = {"participants": ["jev", "llm:openai/gpt-5-mini", "llm:acme/two"], "human": True, "rounds": 1, "time_limit": 0}
+    client.post("/api/tournament", json=body)
+    view = until(lambda: (v := client.get("/api/tournament").json()) and v["rounds"][0]["pairings"][0]["result"] and v)
+    board = view["rounds"][0]["pairings"][0]
+    assert board["result"] and not view["done"], "the model board ended, yours waits, so the round is open"
+    before = {row["id"]: row for row in view["standings"]}
+    finished = client.get("/api/tournament/board/1").json()
+    total = len(finished["history"])
+    state = client.post("/api/tournament/board/1/rewind", json={"plies": 2}).json()
+    assert len(state["history"]) == total - 2 and not state["over"] and state["takebacks"] == 1
+    view = client.get("/api/tournament").json()
+    assert view["rounds"][0]["pairings"][0]["result"] is None
+    after = {row["id"]: row for row in view["standings"]}
+    assert after["jev"]["games"] == before["jev"]["games"] - 1 and after["jev"]["points"] < before["jev"]["points"] + 1
+    view = until(lambda: (v := client.get("/api/tournament").json()) and v["rounds"][0]["pairings"][0]["result"] and v)
+    again = {row["id"]: row for row in view["standings"]}
+    assert again["jev"]["games"] == before["jev"]["games"], "the game came back into the standings when it ended again"
+    assert client.post("/api/tournament/board/1/rewind", json={"plies": 999}).status_code == 409
+    assert client.delete("/api/tournament").json()["active"] is False

@@ -55,6 +55,10 @@ class TakebackRequest(BaseModel):
     ply: int | None = Field(default=None, ge=0)
 
 
+class RewindRequest(BaseModel):
+    plies: int = Field(default=1, ge=1, le=400)
+
+
 class ModelRequest(BaseModel):
     upstream: str = Field(min_length=3, max_length=120)
 
@@ -199,6 +203,10 @@ class TournamentController:
     @post("/board/{number}/move")
     async def move(self, number: int, body: MoveRequest):
         return await self._tournament.human_move(number, body.origin, body.target, body.promotion)
+
+    @post("/board/{number}/rewind")
+    async def rewind(self, number: int, body: RewindRequest | None = None):
+        return await self._tournament.rewind(number, body.plies if body else 1)
 
     @post("/board/{number}/takeback")
     async def takeback(self, number: int, body: TakebackRequest | None = None):

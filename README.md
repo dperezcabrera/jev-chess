@@ -182,6 +182,7 @@ So the same board hosts you against a cheap LLM, a frontier LLM against Jev, or 
 | POST | `/api/tournament` | `{"participants": ["jev", "llm:openai/gpt-5.6-luna"], "human": true, "rounds": 3, "time_limit": 60}` | Start one; `time_limit` is minutes of deciding time per player and game, 0 for none; the first round starts playing at once |
 | GET | `/api/tournament/board/{n}?round=r` | | The state of board `n` of round `r` (the current one by default), in the shape of `/api/state` |
 | POST | `/api/tournament/board/{n}/move` | `{"from": "e2", "to": "e4"}` | Your move on board `n` |
+| POST | `/api/tournament/board/{n}/rewind` | `{"plies": 2}` | Take moves back on board `n` of the current round, finished or not, and play it on: the game leaves the standings until it ends again; earlier rounds cannot be touched |
 | POST | `/api/tournament/board/{n}/takeback` | | Take your last move back on board `n`, with the reply it got |
 | POST | `/api/tournament/board/{n}/clock/pause`, `.../clock/play` | | Stop and restart your own clock on board `n` while it is your move; the other boards play on; `409` when it is not your move |
 | POST | `/api/tournament/board/{n}/retry` | | Start board `n` again after a gateway error |

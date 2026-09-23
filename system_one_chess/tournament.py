@@ -458,6 +458,38 @@ class Tournament:
             entry["task"] = asyncio.create_task(self._run_board(entry))
         return await self.view()
 
+    async def rewind(self, number: int, plies: int) -> dict:
+        """Takes moves back on a board of the current round, finished or not, and plays it on from there. A
+        finished game leaves the standings first and comes back when it ends again; earlier rounds cannot
+        be touched, their results paired the rounds after them."""
+        entry = self._board(number)
+        if entry["task"] is not None and not entry["task"].done():
+            entry["task"].cancel()
+        async with self._lock:
+            if entry["result"] is not None:
+                outcome = await entry["game"].outcome()
+                self._standings.unrecord(
+                    outcome["game_id"],
+                    outcome["players"],
+                    outcome["result"],
+                    outcome["forfeited"],
+                    outcome["illegal"],
+                    outcome["usage"],
+                )
+                for player in (entry["white"], entry["black"]):
+                    if self._scores[player]:
+                        self._scores[player].pop()
+                entry["result"] = None
+                entry["pgn"] = ""
+                entry["record"] = None
+            entry["error"] = None
+            entry["thinking_since"] = None
+            state = await entry["game"].rewind(plies)
+            self._save()
+        if not self._paused:
+            entry["task"] = asyncio.create_task(self._run_board(entry))
+        return state
+
     async def pardon(self, number: int) -> dict:
         """Lets a board of the current round that was lost by illegal moves go on, as if the forfeit had not
         happened: its result leaves the standings and the game continues from the same position."""
