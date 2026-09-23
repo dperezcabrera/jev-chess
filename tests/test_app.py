@@ -1151,7 +1151,7 @@ def test_you_can_take_your_last_move_back_with_the_reply_it_got(make_container, 
     state = client.post("/api/jev").json()
     assert len(state["history"]) == 2 and state["humans_turn"]
     state = client.post("/api/takeback").json()
-    assert state["history"] == [] and state["humans_turn"] and state["takebacks"] == 1
+    assert state["history"] == [] and state["humans_turn"]
     assert state["usage"]["calls"] == 0 and state["usage"]["cost_usd"] == 0.0, "the reply taken back leaves the totals"
     assert state["usage_by_colour"]["black"]["seconds"] == 0.0 and state["usage_by_colour"]["white"]["seconds"] == 0.0
     client.post("/api/move", json={"from": "d2", "to": "d4"})
@@ -1171,7 +1171,7 @@ def test_you_can_take_your_last_move_back_with_the_reply_it_got(make_container, 
     )
     before = len(state["history"])
     state = client.post("/api/tournament/board/1/takeback").json()
-    assert len(state["history"]) == before - 2 and state["humans_turn"] and state["takebacks"] == 1
+    assert len(state["history"]) == before - 2 and state["humans_turn"]
     client.post("/api/tournament/board/1/move", json={"from": origin, "to": target})
     state = until(
         lambda: (
@@ -1183,7 +1183,7 @@ def test_you_can_take_your_last_move_back_with_the_reply_it_got(make_container, 
         "not the model's turn"
     )
     state = client.post("/api/tournament/board/1/takeback", json={"ply": mine}).json()
-    assert len(state["history"]) == mine and state["humans_turn"] and state["takebacks"] == 2
+    assert len(state["history"]) == mine and state["humans_turn"]
     assert client.delete("/api/tournament").json()["active"] is False
 
 
@@ -1237,7 +1237,12 @@ def test_a_finished_board_of_the_current_round_can_be_rewound_and_played_on(make
     client = llm_app(make_container, make_client, legal, [])
     for upstream in ("openai/gpt-5-mini", "acme/two"):
         client.post("/api/models", json={"upstream": upstream})
-    body = {"participants": ["jev", "llm:openai/gpt-5-mini", "llm:acme/two"], "human": True, "rounds": 1, "time_limit": 0}
+    body = {
+        "participants": ["jev", "llm:openai/gpt-5-mini", "llm:acme/two"],
+        "human": True,
+        "rounds": 1,
+        "time_limit": 0,
+    }
     client.post("/api/tournament", json=body)
     view = until(lambda: (v := client.get("/api/tournament").json()) and v["rounds"][0]["pairings"][0]["result"] and v)
     board = view["rounds"][0]["pairings"][0]
@@ -1246,7 +1251,7 @@ def test_a_finished_board_of_the_current_round_can_be_rewound_and_played_on(make
     finished = client.get("/api/tournament/board/1").json()
     total = len(finished["history"])
     state = client.post("/api/tournament/board/1/rewind", json={"plies": 2}).json()
-    assert len(state["history"]) == total - 2 and not state["over"] and state["takebacks"] == 1
+    assert len(state["history"]) == total - 2 and not state["over"]
     view = until(lambda: (v := client.get("/api/tournament").json()) and v["rounds"][0]["pairings"][0]["result"] and v)
     again = {row["id"]: row for row in view["standings"]}
     assert again["jev"]["games"] == before["jev"]["games"], "the game came back into the standings when it ended again"

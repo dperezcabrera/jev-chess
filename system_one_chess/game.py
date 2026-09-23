@@ -50,7 +50,6 @@ class Game:
         self._jev_top: list[dict] = []
         self._moves: list[dict] = []
         self._deciding = False
-        self._takebacks = 0
         self._turn_started = time.monotonic()
         self._clock_paused_at: float | None = None
         self._usage = self._empty_usage()
@@ -165,7 +164,6 @@ class Game:
             "moves": [dict(move) for move in self._moves],
             "jev_top": list(self._jev_top),
             "pardons": self._pardons,
-            "takebacks": self._takebacks,
             "time_limit": self._time_limit,
             "timed_out": self._colour_name(self._timed_out) if self._timed_out is not None else None,
             "clock_paused": self._clock_paused_at is not None,
@@ -187,7 +185,6 @@ class Game:
         self._moves = [dict(move) for move in record["moves"]]
         self._jev_top = list(record.get("jev_top", []))
         self._pardons = int(record.get("pardons", 0))
-        self._takebacks = int(record.get("takebacks", 0))
 
     def _players(self) -> dict[chess.Color, str]:
         """Who sat at each colour for the rankings: a model id, or `human` for the seat the browser played."""
@@ -207,7 +204,7 @@ class Game:
     async def takeback(self, ply: int | None = None) -> dict:
         """Takes your last move back, and the model's reply to it if it came already, or goes back to `ply`
         moves played, a position where it is your move; the game goes on from there as if those moves had
-        never been made: their calls, tokens, time and cost leave the totals. Only a count of takebacks stays."""
+        never been made: their calls, tokens, time and cost leave the totals."""
         async with self._lock:
             if self._human == "none":
                 raise IllegalMove("only a game you play can take a move back")
@@ -231,7 +228,6 @@ class Game:
                     self._unmake()
             self._forfeited = None
             self._timed_out = None
-            self._takebacks += 1
             self._turn_started = time.monotonic()
             self._clock_paused_at = None
             self._jev_top = []
@@ -256,7 +252,7 @@ class Game:
 
     async def rewind(self, plies: int) -> dict:
         """Takes the last `plies` moves back, whoever made them, and reopens the game from there: their calls,
-        tokens, time and cost leave the totals, a forfeit or a loss on time is cleared. For experiments."""
+        tokens, time and cost leave the totals, a forfeit or a loss on time is cleared."""
         async with self._lock:
             if self._deciding:
                 raise IllegalMove("wait for the model's move, then rewind")
@@ -266,7 +262,6 @@ class Game:
                 self._unmake()
             self._forfeited = None
             self._timed_out = None
-            self._takebacks += 1
             self._turn_started = time.monotonic()
             self._clock_paused_at = None
             self._jev_top = []
@@ -442,7 +437,6 @@ class Game:
                 if move.get("illegal_answers")
             ],
             "pardons": self._pardons,
-            "takebacks": self._takebacks,
             "humans_turn": humans_turn,
             "jevs_turn": not over and not humans_turn,
             "dests": dests,
