@@ -1185,3 +1185,23 @@ def test_you_can_take_your_last_move_back_with_the_reply_it_got(make_container, 
     state = client.post("/api/tournament/board/1/takeback", json={"ply": mine}).json()
     assert len(state["history"]) == mine and state["humans_turn"] and state["takebacks"] == 2
     assert client.delete("/api/tournament").json()["active"] is False
+
+
+def test_a_round_can_be_added_to_a_running_or_finished_tournament(make_container, make_client):
+    legal = [lambda labels: json.dumps({"choice": labels[0]})] * 400
+    client = llm_app(make_container, make_client, legal, [])
+    client.post("/api/models", json={"upstream": "openai/gpt-5-mini"})
+    assert client.post("/api/tournament/rounds").status_code == 409
+    body = {"participants": ["jev", "llm:openai/gpt-5-mini"], "human": False, "rounds": 1, "time_limit": 0}
+    client.post("/api/tournament", json=body)
+    view = client.post("/api/tournament/rounds").json()
+    assert view["rounds_total"] == 2 and view["round"] == 1 and view["active"], "the running round is not disturbed"
+    view = until(lambda: (v := client.get("/api/tournament").json()) and v["round"] == 2 and v)
+    assert view["active"] and len(view["rounds"]) == 2
+    view = until(lambda: (v := client.get("/api/tournament").json()) and v["done"] and v)
+    view = client.post("/api/tournament/rounds").json()
+    assert view["rounds_total"] == 3 and view["round"] == 3 and view["active"] and not view["done"], (
+        "a finished tournament plays on"
+    )
+    assert client.get("/api/tournaments").json()["tournaments"][0]["rounds_total"] == 3
+    assert client.delete("/api/tournament").json()["active"] is False

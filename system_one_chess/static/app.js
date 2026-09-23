@@ -796,6 +796,7 @@ function renderTournament(view) {
   tournament = view;
   const status = $('tournament-status');
   $('tournament-stop').hidden = !view.active;
+  $('tournament-add-round').hidden = !view.rounds.length;
   const pauseButton = $('tournament-pause');
   pauseButton.hidden = !view.active;
   pauseButton.setAttribute('aria-pressed', String(Boolean(view.paused)));
@@ -1129,6 +1130,16 @@ tournamentForm.addEventListener('submit', async (event) => {
     await pollTournament();
   } catch (error) {
     $('tournament-error').textContent = error.message;
+  }
+});
+$('tournament-add-round').addEventListener('click', async () => {
+  if (!tournament || !window.confirm(`Add a round ${tournament.rounds_total + 1}? Every player gets one more game.`)) return;
+  try {
+    renderTournament(await api('/api/tournament/rounds', {}));
+    clearTimeout(pollTimer);
+    await pollTournament();
+  } catch (error) {
+    setStatus(error.message, { error: true });
   }
 });
 $('tournament-pause').addEventListener('click', async () => {

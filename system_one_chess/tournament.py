@@ -318,6 +318,26 @@ class Tournament:
         entry["event"].set()
         return state
 
+    async def add_round(self) -> dict:
+        """One more round for a running tournament, or for one that just finished: paired at once when the
+        last round is over, otherwise when its boards end."""
+        if not self._rounds:
+            raise IllegalMove("no tournament is running")
+        if self._rounds_total >= MAX_ROUNDS:
+            raise IllegalMove(f"a tournament has at most {MAX_ROUNDS} rounds")
+        was_done = self.done
+        self._rounds_total += 1
+        _claim(self._id, self)
+        if was_done:
+            self._paused = False
+            if self._semaphore is None:
+                self._semaphore = asyncio.Semaphore(self._concurrency)
+                self._lock = asyncio.Lock()
+            await self._new_round()
+        else:
+            self._save()
+        return await self.view()
+
     async def pause(self) -> dict:
         """Stops asking the models; every board keeps its position and the clocks stop with it."""
         if not self.active:
