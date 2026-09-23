@@ -1204,3 +1204,33 @@ def test_a_round_can_be_added_to_a_running_or_finished_tournament(make_container
     )
     assert client.get("/api/tournaments").json()["tournaments"][0]["rounds_total"] == 3
     assert client.delete("/api/tournament").json()["active"] is False
+
+
+def test_options_say_when_a_move_draws_by_repetition_stalemate_or_material():
+    import chess
+
+    from system_one_chess.jev import _state, describe, material_balance
+
+    board = chess.Board()
+    for san in ("Nf3", "Nf6", "Ng1", "Ng8", "Nf3", "Nf6", "Ng1"):
+        board.push_san(san)
+    assert "repeats an earlier position" in describe(board, board.parse_san("Ng8"))
+    board.push_san("Ng8")
+    board.push_san("Nf3")
+    assert "third repetition" in describe(board, board.parse_san("Nf6")) and "DRAW" in describe(
+        board, board.parse_san("Nf6")
+    )
+    assert "repetition" not in describe(board, board.parse_san("e5"))
+
+    stalemate = chess.Board("7k/5Q2/6K1/8/8/8/8/8 w - - 0 1")
+    assert (
+        "STALEMATE" in describe(stalemate, stalemate.parse_san("Qf7+"))
+        or "STALEMATE" in describe(stalemate, stalemate.parse_san("Qg7+"))
+        or any("STALEMATE" in describe(stalemate, m) for m in stalemate.legal_moves)
+    )
+    material = chess.Board("7k/8/8/8/8/8/8/K6R w - - 0 1")
+    assert material_balance(material) == "you are up 5 points of material"
+    state = _state(material)
+    assert state["material_balance"].startswith("you are up") and state["halfmoves_since_capture_or_pawn_move"] == 0
+    down = chess.Board("7k/8/8/8/8/8/8/K6R b - - 0 1")
+    assert material_balance(down) == "you are down 5 points of material"

@@ -99,8 +99,19 @@ def describe(board: chess.Board, move: chess.Move) -> str:
     board.push(move)
     if board.is_checkmate():
         text += ", CHECKMATE"
-    elif board.is_check():
-        text += ", gives check"
+    elif board.is_stalemate():
+        text += ", STALEMATE: the game ends in a draw"
+    elif board.is_repetition(3):
+        text += ", third repetition of the position: the game ends in a DRAW"
+    elif board.is_insufficient_material():
+        text += ", DRAW by insufficient material"
+    elif board.is_fifty_moves():
+        text += ", DRAW by the fifty-move rule"
+    else:
+        if board.is_check():
+            text += ", gives check"
+        if board.is_repetition(2):
+            text += ", repeats an earlier position (a third time would be a draw)"
     if board.is_attacked_by(board.turn, move.to_square):
         text += ", moved piece can be captured next turn"
     board.pop()
@@ -132,7 +143,22 @@ def _state(board: chess.Board) -> dict:
         "fen": board.fen(),
         "board": str(board),
         "moves_so_far": chess.Board().variation_san(board.move_stack) if board.move_stack else "",
+        "material_balance": material_balance(board),
+        "halfmoves_since_capture_or_pawn_move": board.halfmove_clock,
     }
+
+
+PIECE_VALUES = {chess.PAWN: 1, chess.KNIGHT: 3, chess.BISHOP: 3, chess.ROOK: 5, chess.QUEEN: 9}
+
+
+def material_balance(board: chess.Board) -> str:
+    """Material from the side to move's point of view, so a model knows whether a draw is a gift or a loss."""
+    own = sum(v * len(board.pieces(p, board.turn)) for p, v in PIECE_VALUES.items())
+    other = sum(v * len(board.pieces(p, not board.turn)) for p, v in PIECE_VALUES.items())
+    diff = own - other
+    if diff == 0:
+        return "equal material"
+    return f"you are {'up' if diff > 0 else 'down'} {abs(diff)} point{'s' if abs(diff) != 1 else ''} of material"
 
 
 @component
@@ -279,7 +305,8 @@ class JevMoveChooser:
         instructions = (
             f"You are a strong chess player playing {side}. Which move is best? "
             "Prefer checkmate, then winning material safely, then development and king safety. "
-            "Never leave a piece where it can be captured for free."
+            "Never leave a piece where it can be captured for free. "
+            "A draw ends the game with half a point each: avoid it when you are ahead, welcome it when you are behind."
         )
         answer = await self.ask(
             board,
