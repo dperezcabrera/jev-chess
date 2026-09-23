@@ -1152,7 +1152,8 @@ def test_you_can_take_your_last_move_back_with_the_reply_it_got(make_container, 
     assert len(state["history"]) == 2 and state["humans_turn"]
     state = client.post("/api/takeback").json()
     assert state["history"] == [] and state["humans_turn"] and state["takebacks"] == 1
-    assert state["usage"]["calls"] == 1, "the reply that was taken back still cost a call"
+    assert state["usage"]["calls"] == 0 and state["usage"]["cost_usd"] == 0.0, "the reply taken back leaves the totals"
+    assert state["usage_by_colour"]["black"]["seconds"] == 0.0 and state["usage_by_colour"]["white"]["seconds"] == 0.0
     client.post("/api/move", json={"from": "d2", "to": "d4"})
     state = client.post("/api/jev").json()
     assert state["history"][0] == "d4"

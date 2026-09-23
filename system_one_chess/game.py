@@ -206,8 +206,8 @@ class Game:
 
     async def takeback(self, ply: int | None = None) -> dict:
         """Takes your last move back, and the model's reply to it if it came already, or goes back to `ply`
-        moves played, a position where it is your move; the game goes on from there. What the replies cost
-        stays counted, and the record keeps how many takebacks there were."""
+        moves played, a position where it is your move; the game goes on from there as if those moves had
+        never been made: their calls, tokens, time and cost leave the totals. Only a count of takebacks stays."""
         async with self._lock:
             if self._human == "none":
                 raise IllegalMove("only a game you play can take a move back")
@@ -223,15 +223,12 @@ class Game:
                 if (chess.WHITE if ply % 2 == 0 else chess.BLACK) not in mine:
                     raise IllegalMove("pick a position where it is your move")
                 while len(board.move_stack) > ply:
-                    board.pop()
-                    self._moves.pop()
+                    self._unmake()
             else:
                 if board.turn in mine:
-                    board.pop()
-                    self._moves.pop()
+                    self._unmake()
                 if board.move_stack:
-                    board.pop()
-                    self._moves.pop()
+                    self._unmake()
             self._forfeited = None
             self._timed_out = None
             self._takebacks += 1
@@ -239,6 +236,23 @@ class Game:
             self._clock_paused_at = None
             self._jev_top = []
             return self._snapshot()
+
+    def _unmake(self) -> None:
+        """Pops the last move and takes what it cost out of the totals."""
+        self._board.pop()
+        move = self._moves.pop()
+        colour = chess.WHITE if move["colour"] == "white" else chess.BLACK
+        side = self._usage_by_colour[colour]
+        side["seconds"] -= float(move.get("seconds") or 0.0)
+        if move["player"] != "human" and not move.get("forced"):
+            for totals in (self._usage, side):
+                totals["calls"] -= 1
+                totals["input_tokens"] -= int(move.get("input_tokens") or 0)
+                totals["output_tokens"] -= int(move.get("output_tokens") or 0)
+                totals["cost_usd"] -= float(move.get("cost_usd") or 0.0)
+                totals["illegal"] -= int(move.get("illegal") or 0)
+            self._usage["seconds"] -= float(move.get("seconds") or 0.0)
+            self._illegal[colour] -= int(move.get("illegal") or 0)
 
     async def pause_clock(self) -> dict:
         """Stops your clock while it is your move; the time until you play on is not yours."""
