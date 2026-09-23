@@ -19,6 +19,24 @@ class IllegalMove(Exception):
     pass
 
 
+def finished(board: chess.Board) -> bool:
+    """Whether the game on the board is over: mate, stalemate, insufficient material, or a third repetition
+    or fifty moves without capture or pawn move that have actually happened. A draw that a player could
+    only claim by playing a repeating move is not over: that player still has to choose."""
+    return board.is_game_over() or board.is_repetition(3) or board.is_fifty_moves()
+
+
+def termination(board: chess.Board) -> str | None:
+    outcome = board.outcome()
+    if outcome is not None:
+        return outcome.termination.name.lower().replace("_", " ")
+    if board.is_repetition(3):
+        return "threefold repetition"
+    if board.is_fifty_moves():
+        return "fifty moves"
+    return None
+
+
 @component(scope="session")
 class Game:
     def __init__(
@@ -256,7 +274,7 @@ class Game:
         async with self._lock:
             if self._deciding:
                 raise IllegalMove("wait for the model's move, then rewind")
-            if not 1 <= plies <= len(self._board.move_stack):
+            if not 0 <= plies <= len(self._board.move_stack):
                 raise IllegalMove(f"the game has {len(self._board.move_stack)} moves to take back")
             for _ in range(plies):
                 self._unmake()
@@ -360,11 +378,11 @@ class Game:
         """A side whose deciding time passes the limit loses on time, once the move it was making is counted."""
         if self._time_limit is None or self._timed_out is not None or self._forfeited is not None:
             return
-        if self._usage_by_colour[color]["seconds"] > self._time_limit and not self._board.is_game_over(claim_draw=True):
+        if self._usage_by_colour[color]["seconds"] > self._time_limit and not finished(self._board):
             self._timed_out = color
 
     def _over(self) -> bool:
-        return self._forfeited is not None or self._timed_out is not None or self._board.is_game_over(claim_draw=True)
+        return self._forfeited is not None or self._timed_out is not None or finished(self._board)
 
     def _loser(self) -> chess.Color | None:
         return self._forfeited if self._forfeited is not None else self._timed_out
@@ -373,7 +391,7 @@ class Game:
         loser = self._loser()
         if loser is not None:
             return "0-1" if loser == chess.WHITE else "1-0"
-        return self._board.result(claim_draw=True) if self._board.is_game_over(claim_draw=True) else None
+        return self._board.result(claim_draw=True) if finished(self._board) else None
 
     async def pgn(self) -> tuple[str, str]:
         async with self._lock:
@@ -411,14 +429,14 @@ class Game:
             replay.push(move)
             fens.append(replay.fen())
         last = board.peek() if board.move_stack else None
-        outcome = board.outcome(claim_draw=True)
+        ended = termination(board)
         result = None
         if self._forfeited is not None:
             result = f"{self._result()} by illegal moves"
         elif self._timed_out is not None:
             result = f"{self._result()} on time"
-        elif outcome:
-            result = f"{board.result(claim_draw=True)} by {outcome.termination.name.lower().replace('_', ' ')}"
+        elif ended:
+            result = f"{board.result(claim_draw=True)} by {ended}"
         return {
             "game_id": self._id,
             "fen": board.fen(),

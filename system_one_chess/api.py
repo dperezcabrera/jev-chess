@@ -56,7 +56,7 @@ class TakebackRequest(BaseModel):
 
 
 class RewindRequest(BaseModel):
-    plies: int = Field(default=1, ge=1, le=400)
+    plies: int = Field(default=1, ge=0, le=400, description="0 reopens a finished game from its last position")
 
 
 class ModelRequest(BaseModel):

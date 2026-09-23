@@ -1256,4 +1256,34 @@ def test_a_finished_board_of_the_current_round_can_be_rewound_and_played_on(make
     again = {row["id"]: row for row in view["standings"]}
     assert again["jev"]["games"] == before["jev"]["games"], "the game came back into the standings when it ended again"
     assert client.post("/api/tournament/board/1/rewind", json={"plies": 300}).status_code == 409
+    reopened = client.post("/api/tournament/board/1/rewind", json={"plies": 0}).json()
+    assert len(reopened["history"]) == total, "zero plies keeps the position"
     assert client.delete("/api/tournament").json()["active"] is False
+
+
+def test_a_game_is_not_over_until_the_third_repetition_actually_happens():
+
+    import chess
+
+    from system_one_chess.game import finished, termination
+
+    board = chess.Board()
+    for san in ("Nf3", "Nf6", "Ng1", "Ng8", "Nf3", "Nf6", "Ng1"):
+        board.push_san(san)
+    assert board.can_claim_threefold_repetition(), "black could repeat for the third time with Ng8"
+    assert not finished(board) and termination(board) is None, "but black has not, and may play something else"
+    board.push_san("Ng8")
+    assert finished(board) and termination(board) == "threefold repetition"
+    assert board.result(claim_draw=True) == "1/2-1/2"
+
+    from system_one_chess.game import Game
+    from system_one_chess.standings import Standings
+
+    game = Game(chooser=None, credentials=None, registry=None, session_models=None, standings=Standings(registry=None))
+    game._reset("white")
+    for san in ("Nf3", "Nf6", "Ng1", "Ng8", "Nf3", "Nf6", "Ng1"):
+        game._board.push_san(san)
+    state = game._snapshot()
+    assert not state["over"] and state["result"] is None and state["turn"] == "black"
+    game._board.push_san("Ng8")
+    assert game._snapshot()["result"] == "1/2-1/2 by threefold repetition"
