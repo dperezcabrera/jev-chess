@@ -51,6 +51,10 @@ class TournamentRequest(BaseModel):
     time_limit: float = Field(default=60.0, ge=0, le=24 * 60, description="minutes per player and game, 0 for none")
 
 
+class TakebackRequest(BaseModel):
+    ply: int | None = Field(default=None, ge=0)
+
+
 class ModelRequest(BaseModel):
     upstream: str = Field(min_length=3, max_length=120)
 
@@ -93,6 +97,10 @@ class GameController:
     @post("/pardon")
     async def pardon(self):
         return await self._game.pardon()
+
+    @post("/takeback")
+    async def takeback(self, body: TakebackRequest | None = None):
+        return await self._game.takeback(body.ply if body else None)
 
     @post("/jev")
     async def jev(self):
@@ -187,6 +195,10 @@ class TournamentController:
     @post("/board/{number}/move")
     async def move(self, number: int, body: MoveRequest):
         return await self._tournament.human_move(number, body.origin, body.target, body.promotion)
+
+    @post("/board/{number}/takeback")
+    async def takeback(self, number: int, body: TakebackRequest | None = None):
+        return await self._tournament.takeback(number, body.ply if body else None)
 
     @post("/board/{number}/clock/pause")
     async def pause_clock(self, number: int):

@@ -341,6 +341,15 @@ class Tournament:
                 entry["task"] = asyncio.create_task(self._run_board(entry))
         return await self.view()
 
+    async def takeback(self, number: int, ply: int | None = None) -> dict:
+        entry = self._board(number)
+        if entry["result"] is not None:
+            raise IllegalMove("that game is over")
+        state = await entry["game"].takeback(ply)
+        self._save()
+        entry["event"].set()
+        return state
+
     async def pause_clock(self, number: int) -> dict:
         state = await self._board(number)["game"].pause_clock()
         self._save()
