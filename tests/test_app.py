@@ -1250,5 +1250,5 @@ def test_a_finished_board_of_the_current_round_can_be_rewound_and_played_on(make
     view = until(lambda: (v := client.get("/api/tournament").json()) and v["rounds"][0]["pairings"][0]["result"] and v)
     again = {row["id"]: row for row in view["standings"]}
     assert again["jev"]["games"] == before["jev"]["games"], "the game came back into the standings when it ended again"
-    assert client.post("/api/tournament/board/1/rewind", json={"plies": 999}).status_code == 409
+    assert client.post("/api/tournament/board/1/rewind", json={"plies": 300}).status_code == 409
     assert client.delete("/api/tournament").json()["active"] is False
