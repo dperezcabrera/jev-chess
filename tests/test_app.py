@@ -1212,22 +1212,18 @@ def test_options_say_when_a_move_draws_by_repetition_stalemate_or_material():
     from system_one_chess.jev import _state, describe, material_balance
 
     board = chess.Board()
-    for san in ("Nf3", "Nf6", "Ng1", "Ng8", "Nf3", "Nf6", "Ng1"):
+    for san in ("Nf3", "Nf6", "Ng1"):
         board.push_san(san)
-    assert "repeats an earlier position" in describe(board, board.parse_san("Ng8"))
-    board.push_san("Ng8")
-    board.push_san("Nf3")
-    assert "third repetition" in describe(board, board.parse_san("Nf6")) and "DRAW" in describe(
-        board, board.parse_san("Nf6")
-    )
+    assert "repeats an earlier position" in describe(board, board.parse_san("Ng8")), "back to the start, a second time"
     assert "repetition" not in describe(board, board.parse_san("e5"))
+    for san in ("Ng8", "Nf3", "Nf6", "Ng1"):
+        board.push_san(san)
+    text = describe(board, board.parse_san("Ng8"))
+    assert "third repetition" in text and "DRAW" in text, "back to the start a third time ends the game"
 
     stalemate = chess.Board("7k/5Q2/6K1/8/8/8/8/8 w - - 0 1")
-    assert (
-        "STALEMATE" in describe(stalemate, stalemate.parse_san("Qf7+"))
-        or "STALEMATE" in describe(stalemate, stalemate.parse_san("Qg7+"))
-        or any("STALEMATE" in describe(stalemate, m) for m in stalemate.legal_moves)
-    )
+    assert "STALEMATE" in describe(stalemate, stalemate.parse_san("Qe6"))
+    assert "CHECKMATE" in describe(stalemate, stalemate.parse_san("Qg7#"))
     material = chess.Board("7k/8/8/8/8/8/8/K6R w - - 0 1")
     assert material_balance(material) == "you are up 5 points of material"
     state = _state(material)
